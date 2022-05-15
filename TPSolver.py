@@ -1,20 +1,19 @@
-from distutils.log import warn
-from click import progressbar
 import numpy as np
 import cupy as cp
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
-import math
+
 import time
 from numba import cuda
 from progress.bar import Bar # (pip install progress)
+from cpuinfo import get_cpu_info
 import os
 os.system("cls")
 
 
 
-# import warnings
+import warnings
+warnings.filterwarnings("error")
 # warnings.filterwarnings('ignore')
 
 
@@ -41,6 +40,8 @@ class TPSolver:
     __type = np.float32
     flagGPU = False
     linelenght = 70
+    plot_frequency = 100
+    
     
     # Matrices
     x = y = xm = ym = p = us = vs = R = u = v = L = []
@@ -51,39 +52,90 @@ class TPSolver:
     # Mesh size
     dx = dy = dxi = dxy = 0
     
-    debug = flagTimeStatistics = False
+    debug = flagTimeStatistics = flagPlot = False
+    verbose = True
     
     def __init__(self, mode = False):
         if not mode:
             return
         self.flagGPU = mode
-        if mode:
-            self.testGPUSystem()
+
     def enableGPU(self,mode):
         self.flagGPU = mode
-        if mode:
-            self.testGPUSystem()
-        
-    def testGPUSystem(self):
-        device = cuda.get_current_device()
-        self.printTextOnLine('GPU Device:','-')
-        print(device)
-        if self.debug:
-            print('GPU Mode ENABLED!')
+
+    def setVerbose(self,val):
+        self.verbose = val
+            
+    def plotEveryNTimeSteps(self,val):
+        self.plot_frequency = val
+        self.flagPlot = True
     
     def setDebug(self,val):
         self.debug = val
-    def printLine(self,char):
+    def printLine(self,char = '-'):
         s = char
         print(s * self.linelenght)
-    def printTextOnLine(self,text,char):
+    def printTextOnLine(self,text,char = '-'):
         L = len(text)
         LP = (self.linelenght - L)//2
         if LP % 2 == 0:
             print(char*LP,text,char*LP)
         else:
-            print(char*LP,text,char*(LP - 1))
+            print(char*(LP - 1),text,char*(LP - 1))
+    def printHeaderAndOptions(self):
+        self.printTextOnLine('TPSolver','=')
+        print('Options selected:')
+        device = 'GPU' if self.flagGPU else 'CPU'
+        print('Device Mode: ', device)
+        if device == 'GPU':
+            cc_cores_per_SM_dict = {
+                (2,0) : 32,
+                (2,1) : 48,
+                (3,0) : 192,
+                (3,5) : 192,
+                (3,7) : 192,
+                (5,0) : 128,
+                (5,2) : 128,
+                (6,0) : 64,
+                (6,1) : 128,
+                (7,0) : 64,
+                (7,5) : 64,
+                (8,0) : 64,
+                (8,6) : 128}
+            gpu = cuda.get_current_device()
+            str = getattr(gpu,'name')
+            print('GPU Model: ',str.decode("utf-8"))
+            my_sms = getattr(gpu, 'MULTIPROCESSOR_COUNT')
+            my_cc = gpu.compute_capability
+            cores_per_sm = cc_cores_per_SM_dict.get(my_cc)
+            total_cores = cores_per_sm*my_sms
+            print("GPU Compute Capability: " , my_cc)
+            print("GPU Total Number of SMs: " , my_sms)
+            print("GPU Total Cores: " , total_cores)
+            
+        cpu = get_cpu_info()
+        print('CPU Model: ',cpu['brand_raw'])
+        print('CPU Total Cores: ',cpu['count'])
+        print('Debug Mode: ', self.debug)
+        self.printLine()
+        print('Density: ', self.rho)
+        print('Kinematics Viscosity: ', self.nu)
+        print('Grid size: ',self.nx ,' x ', self.ny )        
+        print('Domain size: ',self.Lx ,' x ', self.Ly )
+        print('Time Step: ', self.dt)
+        print('Simulation Time: ', self.tf)
+        self.printLine()
+        print('Top Wall BC: ', self.u_top)
+        print('Bottom Wall BC: ', self.u_bot)
+        print('Left Wall BC: ', self.v_left)
+        print('Right Wall BC: ', self.v_right)
+        self.printLine()
+        if self.flagPlot:
+            print('Plotting every ', self.plot_frequency, ' steps.')
+            self.printLine()  
+             
         
+                
     def printTimeStatistics(self,val):
         self.flagTimeStatistics = val
     def printDebug(self,str,val):
@@ -323,13 +375,9 @@ class TPSolver:
         self.checkNaN()
         figure, ax = plt.subplots(figsize=(5,5))
         XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
-        CS = ax.contourf(XX, YY,
+        ax.contourf(XX, YY,
                     np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax]),
                     10, cmap=plt.cm.bone, origin='lower')
-        cax = make_axes_locatable(ax).append_axes("right", size="5%", pad="2%")
-
-        cbar = plt.colorbar(CS, cax=cax)
-        cbar.ax.set_ylabel('Pressure Pascal [P]')
         plt.xlim([0, self.Lx - self.dx])
         plt.ylim([0, self.Ly - self.dy])
         plt.show()       
@@ -351,7 +399,7 @@ class TPSolver:
         
         XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
         PP = np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax])
-        UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax])
+        UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax]) + 1
         VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
         
         ax1.contourf(XX,YY,PP)
@@ -365,24 +413,27 @@ class TPSolver:
         return fig, (ax1,ax2)
         
     def updatePlot(self, figure, axes):
-
-        XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
-        PP = np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax])
-        UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax])
-        VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
-        # color = np.sqrt(UU**2 - VV**2)
-        
-        axes[0].clear()
-        axes[1].clear()
-        
-        axes[0].contourf(XX,YY,PP,100)
-        axes[1].quiver(XX,YY,UU,VV)
-        
-        plt.xlim([0, self.Lx - self.dx])
-        plt.ylim([0, self.Ly - self.dy])
-        figure.canvas.draw()
-        figure.canvas.flush_events()
-        plt.show(block=False)
+        try:
+            XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
+            PP = np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax])
+            UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax])
+            VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
+            # color = np.sqrt(UU**2 - VV**2)
+            
+            axes[0].clear()
+            axes[1].clear()
+            
+            axes[0].contourf(XX,YY,PP,100)
+            axes[1].quiver(XX,YY,UU,VV)
+            
+            plt.xlim([0, self.Lx - self.dx])
+            plt.ylim([0, self.Ly - self.dy])
+            figure.canvas.draw()
+            figure.canvas.flush_events()
+            plt.show(block=False)
+        except:
+            raise ValueError('ERROR: Model went probably UNSTABLE! Check for NaN!')
+            
         
         return figure, axes
         
@@ -610,7 +661,10 @@ class TPSolver:
     
     def debugGPUmode(self):
         
-        TPB = 16
+        self.createComputationalMesh()
+        self.createLaplacian()
+        
+        TPB = 4
         gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
         blockDims = [TPB, TPB]
         
@@ -667,33 +721,33 @@ class TPSolver:
                 print('\n')   
                 
 
-            # (1-2) u-v Predictors
-            self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
-            self.uMomentumPredictor()
-            us_gpu = cp.asnumpy(d_us)
-            self.printDebug('us - GPU',us_gpu) 
-            np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
-            vs_gpu = cp.asnumpy(d_vs)
-            self.vMomentumPredictor()
-            self.printDebug('vs - GPU',vs_gpu) 
-            np.testing.assert_allclose(self.vs, vs_gpu, atol = 1e-3)
-                
-            # # (1) u Predictor
+            # # (1-2) u-v Predictors
+            # self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
             # self.uMomentumPredictor()
-            # self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-
-            # # us_gpu = d_us.copy_to_host()
             # us_gpu = cp.asnumpy(d_us)
             # self.printDebug('us - GPU',us_gpu) 
             # np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
-            
-            # # (2) v Predictor
-            # self.vMomentumPredictor()
-            # self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
-            # # vs_gpu = d_vs.copy_to_host()
             # vs_gpu = cp.asnumpy(d_vs)
+            # self.vMomentumPredictor()
             # self.printDebug('vs - GPU',vs_gpu) 
             # np.testing.assert_allclose(self.vs, vs_gpu, atol = 1e-3)
+                
+            # # (1) u Predictor
+            self.uMomentumPredictor()
+            self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
+
+            # us_gpu = d_us.copy_to_host()
+            us_gpu = cp.asnumpy(d_us)
+            self.printDebug('us - GPU',us_gpu) 
+            np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
+            
+            # (2) v Predictor
+            self.vMomentumPredictor()
+            self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            # vs_gpu = d_vs.copy_to_host()
+            vs_gpu = cp.asnumpy(d_vs)
+            self.printDebug('vs - GPU',vs_gpu) 
+            np.testing.assert_allclose(self.vs, vs_gpu, atol = 1e-3)
             
             # (3) RHS
             self.computeRHS()
@@ -714,37 +768,37 @@ class TPSolver:
             self.printDebug('Pressure - GPU',p_gpu)
             np.testing.assert_allclose(self.p, p_gpu, atol = 1e-3)
             
+            # # (5) u,v corrected
+            # self.debug = False
+            # self.correctVelocities()
+            # self.debug = True         
+            
+            # ######## THIS DOESN'T WORK!!!! NEED TO DEBUG #########
+            
+            # self.correct_vel_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
+            # u_gpu = cp.asnumpy(d_u)
+            # v_gpu = cp.asnumpy(d_v)     
+            # self.printDebug('Corrected u (Before BC)',self.u)  
+            # self.printDebug('Corrected u (Before BC) - GPU',u_gpu)
+            # np.testing.assert_allclose(self.u, u_gpu, atol = 1e-3)
+            # self.printDebug('Corrected v (Before BC)',self.v)  
+            # self.printDebug('Corrected v (Before BC) - GPU',v_gpu)  
+            # np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3) 
+            
             # (5) u,v corrected
             self.debug = False
             self.correctVelocities()
-            self.debug = True         
-            
-            ######## THIS DOESN'T WORK!!!! NEED TO DEBUG #########
-            
-            self.correct_vel_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
+            self.debug = True
+            self.correct_uvel_device[gridDims,blockDims](vec,bds,d_u,d_us,d_p)
+            self.correct_vvel_device[gridDims,blockDims](vec,bds,d_v,d_vs,d_p)
             u_gpu = cp.asnumpy(d_u)
-            v_gpu = cp.asnumpy(d_v)     
+            v_gpu = cp.asnumpy(d_v)
             self.printDebug('Corrected u (Before BC)',self.u)  
             self.printDebug('Corrected u (Before BC) - GPU',u_gpu)
-            np.testing.assert_allclose(self.u, u_gpu, atol = 1e-3)
             self.printDebug('Corrected v (Before BC)',self.v)  
-            self.printDebug('Corrected v (Before BC) - GPU',v_gpu)  
-            np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3) 
-            
-            # (5) u,v corrected
-            # self.debug = False
-            # self.correctVelocities()
-            # self.debug = True
-            # self.correct_uvel_device[gridDims,blockDims](vec,bds,d_u,d_us,d_p)
-            # self.correct_vvel_device[gridDims,blockDims](vec,bds,d_v,d_vs,d_p)
-            # u_gpu = cp.asnumpy(d_u)
-            # v_gpu = cp.asnumpy(d_v)
-            # self.printDebug('Corrected u (Before BC)',self.u)  
-            # self.printDebug('Corrected u (Before BC) - GPU',u_gpu)
-            # self.printDebug('Corrected v (Before BC)',self.v)  
-            # self.printDebug('Corrected v (Before BC) - GPU',v_gpu)
-            # np.testing.assert_allclose(self.u, u_gpu, atol = 1e-3)
-            # np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3)
+            self.printDebug('Corrected v (Before BC) - GPU',v_gpu)
+            np.testing.assert_allclose(self.u, u_gpu, atol = 1e-3)
+            np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3)
             
             # (6) Apply BC
             self.setBoundaryConditions()
@@ -796,7 +850,7 @@ class TPSolver:
         
         # stream1 = cuda.stream()
         # stream2 = cuda.stream()
-        bar = Bar('Processing',max=self.nsteps)
+        bar = Bar('Computing',max=self.nsteps)
         it = 1
         first_plot = True
         start = time.time()
@@ -812,10 +866,10 @@ class TPSolver:
             self.correct_vvel_device[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
             self.apply_u_bc_device[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
             self.apply_v_bc_device[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
-            if first_plot:
+            if first_plot and self.flagPlot:
                 fig, axes = self.initializeFigure()
                 first_plot = False
-            if it % 10 == 0: 
+            if it % self.plot_frequency == 0 and self.flagPlot: 
                 self.p = cp.asnumpy(d_p)
                 self.u = cp.asnumpy(d_u)
                 self.v = cp.asnumpy(d_v)
@@ -836,13 +890,16 @@ class TPSolver:
         self.createComputationalMesh()
         self.createLaplacian()
         
+        if self.verbose:
+            self.printHeaderAndOptions()
+        
         
         if self.flagGPU:
             time_elapsed = self.solve_kernel()
         else:
             first_plot = True
             it = 1
-            bar = Bar('Processing',max=self.nsteps)
+            bar = Bar('Computing',max=self.nsteps)
             start = time.time()
             while self.t <= self.tf:
                 # Update Time
@@ -857,16 +914,16 @@ class TPSolver:
                 self.calculatePressure()
                 self.correctVelocities()
                 self.setBoundaryConditions()
-                if first_plot:
+                if first_plot and self.flagPlot:
                     fig, axes = self.initializeFigure()
                     first_plot = False
-                if it % 10 == 0: 
+                if it % self.plot_frequency == 0 and self.flagPlot: 
                     fig, axes = self.updatePlot(fig, axes)
                 bar.next()
                 it += 1
             bar.finish()
             time_elapsed = time.time() - start
-            
+            self.updatePlot(fig,axes)
             
         if self.flagTimeStatistics:
             self.printTextOnLine('Time Statistics','-')
@@ -876,29 +933,144 @@ class TPSolver:
                 print('CPU Mode: ', end = '')  
             print(' ' + str(time_elapsed) + ' seconds!')
             
-        # self.plotContour()
-        # self.plotQuiver()
+        
+        plt.show()
+        
+    def runBenchmark(self, N = None):
+        
+        # Run N iteration CPU vs GPU
+        if N is None:
+            N = self.nsteps
             
+        self.createComputationalMesh()
+        self.createLaplacian()
+
+        self.debug = False
+        self.flagPlot = False
+        self.flagGPU = True
+        
+        self.printHeaderAndOptions() 
+        self.printTextOnLine(('CPU/GPU Benchmark for ' + str(N) + ' iterations'))  
+        self.printLine()
+            
+        # Run CPU First
+        bar = Bar('CPU Run ',max=N)
+        it = 1
+        start = time.time()
+        while it <= N:
+            # Update Time
+            self.t += self.dt
+            self.uMomentumPredictor()
+            self.vMomentumPredictor()
+            self.computeRHS()
+            self.calculatePressure()
+            self.correctVelocities()
+            self.setBoundaryConditions()
+            bar.next()
+            it += 1
+        end = time.time()
+        bar.finish()
+        cpu_time = float(end-start)
+        p_cpu = self.p
+        u_cpu = self.u
+        v_cpu = self.v
+        
+        # Reset Values
+        self.createComputationalMesh()
+        L_old = self.L
+        self.createLaplacian()
+        L_new = self.L
+        # Just checking 
+        np.testing.assert_allclose(L_old, L_new, atol = 1e-3)
+        L_old = None
+        L_new = None
+        
+        # Run GPU
+        TPB = 4
+        
+        bds = np.array([self.imin,self.imax,self.jmin,self.jmax], dtype=np.uint32)
+        
+        vec = np.array([self.nu, 
+                        self.dxi, 
+                        self.dyi, 
+                        self.dt, 
+                        self.rho], 
+                        dtype=self.__type)
+        
+        d_vec = cp.asarray(vec)
+        d_bds = cp.asarray(bds)
+        d_u = cp.asarray(self.u)
+        d_v = cp.asarray(self.v)
+        d_us = cp.asarray(self.us)
+        d_vs = cp.asarray(self.vs)
+        d_R = cp.asarray(self.R)
+        d_p = cp.asarray(self.p)
+        d_pv = cp.zeros_like(d_R)
+        d_L = cp.asarray(self.L)
+        u_bc = cp.asarray(np.array([self.u_bot, self.u_top], dtype=self.__type))
+        v_bc = cp.asarray(np.array([self.v_left, self.v_right], dtype=self.__type))
+        d_u_bc = cp.asarray(u_bc)
+        d_v_bc = cp.asarray(v_bc)
+        d_v_bc = cp.asarray(v_bc)  
+        gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
+        blockDims = [TPB, TPB]
+        
+        bar = Bar('GPU Run ',max=N)
+        it = 1
+        start = time.time()
+        while it <= N:
+            self.t += self.dt
+            # Not working?
+            #self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
+            self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            self.computeRHS_device[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
+            d_pv = cp.linalg.solve(d_L,d_R)
+            self.calculatePressure_device[gridDims,blockDims](d_bds,d_p,d_pv)
+            self.correct_uvel_device[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
+            self.correct_vvel_device[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
+            self.apply_u_bc_device[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
+            self.apply_v_bc_device[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
+            bar.next()
+            it += 1
+        end = time.time()
+        bar.finish()
+        gpu_time = float(end-start)
+        p_gpu = cp.asnumpy(d_p)
+        u_gpu = cp.asnumpy(d_u)
+        v_gpu = cp.asnumpy(d_v)
+        
+        self.printTextOnLine('Time Statistics','-')
+        print('CPU Time: ', cpu_time)
+        print('GPU Time: ', gpu_time)
+        print('Speed-up Factor: ' +  str(cpu_time/gpu_time) + 'x')
+        
+        # self.printTextOnLine('Check Accuracy','-')
+        # np.testing.assert_allclose(p_cpu, p_gpu, atol = 1e-1)
+        # np.testing.assert_allclose(u_cpu, u_gpu, atol = 1e-1)
+        # np.testing.assert_allclose(v_cpu, v_gpu, atol = 1e-1)
+        
+        
 
 def main():
     test = TPSolver()
-    test.enableGPU(True)
+    test.enableGPU(False)
+    test.setVerbose(True)
     test.setDebug(False)
     test.setDensity(1.225)
     test.setKinematicViscosity(0.005)
-    test.setGridPoints(50,50)
-    test.setDomainSize(3,3)
-    test.setTimeStep(0.01)
-    test.setSimulationTime(30)
+    test.setGridPoints(100,100)
+    test.setDomainSize(1,1)
+    test.setTimeStep(0.001)
+    test.setSimulationTime(20)
     test.printTimeStatistics(True)   
     test.setInitialVelocity('top',4)
     test.setInitialVelocity('bottom',-4)
+    test.plotEveryNTimeSteps(30)
     
-    test.solve()
-    
-    
-    
+    # test.solve()
     # test.debugGPUmode()
+    test.runBenchmark(100)
 
 
 if __name__ == '__main__':
