@@ -22,8 +22,27 @@ The GPU implementation requires a working cuda device (AMD devices have not been
  - [Numba Website](https://numba.pydata.org/)
  - [Cupy Website](https://cupy.dev/)
 
-## Theory
-### Governing Equations
-```math
-e^{i\pi} + 1 = 0
+## Usage
+```py
+test = TPSolver()
+test.enableGPU(True)
+test.setVerbose(True)
+test.setDebug(False)
+test.setDensity(1.225)
+test.setKinematicViscosity(0.005)
+test.setGridPoints(30,30)
+test.setDomainSize(1,1)
+test.setTimeStep(0.001)
+test.setSimulationTime(20)
+test.printTimeStatistics(True)   
+test.setInitialVelocity('top',4)
+test.setInitialVelocity('right',4)
+test.setInitialVelocity('bottom',-4)
+test.setInitialVelocity('left',-4)
+test.plotEveryNTimeSteps(30)
+
+test.solve()
+# test.debugGPUmode()
+# test.runBenchmark(300)
 ```
+
