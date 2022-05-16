@@ -13,7 +13,7 @@ os.system("cls")
 
 
 import warnings
-warnings.filterwarnings("error")
+# warnings.filterwarnings("error")
 # warnings.filterwarnings('ignore')
 
 
@@ -856,9 +856,9 @@ class TPSolver:
         start = time.time()
         while self.t <= self.tf:
             self.t += self.dt
-            # self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-            # self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
-            self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
+            self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            # self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
             self.computeRHS_device[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             d_pv = cp.linalg.solve(d_L,d_R)
             self.calculatePressure_device[gridDims,blockDims](d_bds,d_p,d_pv)
@@ -1054,23 +1054,25 @@ class TPSolver:
 
 def main():
     test = TPSolver()
-    test.enableGPU(False)
+    test.enableGPU(True)
     test.setVerbose(True)
     test.setDebug(False)
     test.setDensity(1.225)
     test.setKinematicViscosity(0.005)
-    test.setGridPoints(100,100)
+    test.setGridPoints(30,30)
     test.setDomainSize(1,1)
     test.setTimeStep(0.001)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)   
     test.setInitialVelocity('top',4)
+    test.setInitialVelocity('right',4)
     test.setInitialVelocity('bottom',-4)
+    test.setInitialVelocity('left',-4)
     test.plotEveryNTimeSteps(30)
     
-    # test.solve()
+    test.solve()
     # test.debugGPUmode()
-    test.runBenchmark(100)
+    # test.runBenchmark(300)
 
 
 if __name__ == '__main__':
