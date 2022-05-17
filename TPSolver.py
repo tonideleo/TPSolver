@@ -8,7 +8,8 @@ from numba import cuda
 from progress.bar import Bar # (pip install progress)
 from cpuinfo import get_cpu_info
 import os
-os.system("cls")
+
+clearConsole = lambda: os.system('cls' if os.name in ('nt', 'dos') else 'clear')
 
 
 
@@ -41,7 +42,7 @@ class TPSolver:
     flagGPU = False
     linelenght = 70
     plot_frequency = 100
-    
+    sig_figs = 3
     
     # Matrices
     x = y = xm = ym = p = us = vs = R = u = v = L = []
@@ -77,14 +78,15 @@ class TPSolver:
         print(s * self.linelenght)
     def printTextOnLine(self,text,char = '-'):
         L = len(text)
-        LP = (self.linelenght - L)//2
+        LP = (self.linelenght - L)//2        
         if LP % 2 == 0:
             print(char*LP,text,char*LP)
         else:
-            print(char*(LP - 1),text,char*(LP - 1))
+            print(char*(LP - 1),text,char*(LP))
+            
     def printHeaderAndOptions(self):
         self.printTextOnLine('TPSolver','=')
-        print('Options selected:')
+        # print('Options selected:')
         device = 'GPU' if self.flagGPU else 'CPU'
         print('Device Mode: ', device)
         if device == 'GPU':
@@ -437,7 +439,7 @@ class TPSolver:
         
         return figure, axes
         
-    @cuda.jit(debug=True)
+    @cuda.jit()
     def createLaplacian_device(vec,L):
         i,j = cuda.grid(2)
         dims = L.shape
@@ -678,21 +680,6 @@ class TPSolver:
                         self.rho], 
                         dtype=np.float32)
         
-        # d_vec = cuda.to_device(vec)
-        # d_bds = cuda.to_device(bds) 
-        # d_u = cuda.to_device(self.u)
-        # d_v = cuda.to_device(self.v)
-        # d_us = cuda.to_device(self.us)
-        # d_vs = cuda.to_device(self.vs)
-        # d_R = cuda.to_device(self.R)
-        # d_p = cuda.to_device(self.p)
-        # d_pv = cuda.device_array_like(self.R)
-        # d_L = cuda.to_device(self.L)
-        # u_bc = np.array([self.u_bot, self.u_top], dtype=np.float32)
-        # v_bc = np.array([self.v_left, self.v_right], dtype=np.float32)
-        # d_u_bc = cuda.to_device(u_bc)
-        # d_v_bc = cuda.to_device(v_bc)
-        
         d_vec = cp.asarray(vec)
         d_bds = cp.asarray(bds)
         d_u = cp.asarray(self.u)
@@ -702,7 +689,6 @@ class TPSolver:
         d_R = cp.asarray(self.R)
         d_p = cp.asarray(self.p)
         d_pv = cp.zeros_like(d_R)
-        # d_pv = cuda.device_array_like(self.R)
         d_L = cp.asarray(self.L)
         u_bc = cp.asarray(np.array([self.u_bot, self.u_top], dtype=np.float32))
         v_bc = cp.asarray(np.array([self.v_left, self.v_right], dtype=np.float32))
@@ -858,6 +844,7 @@ class TPSolver:
             self.t += self.dt
             self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
             self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            # Not properly working yet, need debug
             # self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
             self.computeRHS_device[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             d_pv = cp.linalg.solve(d_L,d_R)
@@ -931,7 +918,7 @@ class TPSolver:
                 print('GPU Mode: ', end = '')    
             else:
                 print('CPU Mode: ', end = '')  
-            print(' ' + str(time_elapsed) + ' seconds!')
+            print(' ' + str(round(time_elapsed, self.sig_figs)) + ' seconds!')
             
         
         plt.show()
@@ -1041,11 +1028,15 @@ class TPSolver:
         v_gpu = cp.asnumpy(d_v)
         
         self.printTextOnLine('Time Statistics','-')
-        print('CPU Time: ', cpu_time)
-        print('GPU Time: ', gpu_time)
-        print('Speed-up Factor: ' +  str(cpu_time/gpu_time) + 'x')
+        print('CPU Time: ', round(cpu_time,self.sig_figs),'s')
+        print('GPU Time: ', round(gpu_time,self.sig_figs),'s')
+        print('Speed-up Factor: ' +  str(round(cpu_time/gpu_time,self.sig_figs)) + 'x')
         
-        # self.printTextOnLine('Check Accuracy','-')
+        self.printTextOnLine('Check Accuracy','-')
+        print('Pressure Norm-L2 Value: ', round(np.linalg.norm(p_cpu - p_gpu), self.sig_figs))
+        print('u-vel Norm-L2 Value: ', round(np.linalg.norm(u_cpu - u_gpu), self.sig_figs)) 
+        print('v-vel Norm-L2 Value: ', round(np.linalg.norm(v_cpu - v_gpu), self.sig_figs))
+        
         # np.testing.assert_allclose(p_cpu, p_gpu, atol = 1e-1)
         # np.testing.assert_allclose(u_cpu, u_gpu, atol = 1e-1)
         # np.testing.assert_allclose(v_cpu, v_gpu, atol = 1e-1)
@@ -1053,6 +1044,7 @@ class TPSolver:
         
 
 def main():
+    clearConsole()
     test = TPSolver()
     test.enableGPU(True)
     test.setVerbose(True)
@@ -1070,9 +1062,9 @@ def main():
     test.setInitialVelocity('left',-4)
     test.plotEveryNTimeSteps(30)
     
-    test.solve()
+    # test.solve()
     # test.debugGPUmode()
-    # test.runBenchmark(300)
+    test.runBenchmark(100)
 
 
 if __name__ == '__main__':
