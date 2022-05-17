@@ -56,7 +56,9 @@ class TPSolver:
     debug = flagTimeStatistics = flagPlot = False
     verbose = True
     
-    def __init__(self, mode = False):
+    def __init__(self, license = True, mode = False):
+        if license:
+            self.licenseDisclaimer()
         if not mode:
             return
         self.flagGPU = mode
@@ -83,6 +85,18 @@ class TPSolver:
             print(char*LP,text,char*LP)
         else:
             print(char*(LP - 1),text,char*(LP))
+    def licenseDisclaimer(self):
+        self.printTextOnLine('License Disclaimer','=')
+        print('TPSolver: 2D Navier-Stokes Solver for GPU')
+        print('This program is free software: you can redistribute it and/or modify')
+        print('it under the terms of the GNU Affero General Public License as published')
+        print('by the Free Software Foundation, either version 3 of the License.')
+        print('This program is distributed in the hope that it will be useful,')
+        print('but WITHOUT ANY WARRANTY; without even the implied warranty of')
+        print('MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the')
+        print('GNU Affero General Public License for more details.')
+        self.printLine('=')
+        print('')
             
     def printHeaderAndOptions(self):
         self.printTextOnLine('TPSolver','=')
@@ -1045,7 +1059,7 @@ class TPSolver:
 
 def main():
     clearConsole()
-    test = TPSolver()
+    test = TPSolver(False)
     test.enableGPU(True)
     test.setVerbose(True)
     test.setDebug(False)
