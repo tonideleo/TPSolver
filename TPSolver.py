@@ -1,3 +1,4 @@
+from turtle import color
 import numpy as np
 import cupy as cp
 import scipy.sparse as sp
@@ -419,7 +420,9 @@ class TPSolver:
         VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
         
         ax1.contourf(XX,YY,PP)
+        ax1.set_xlabel('test')
         ax2.quiver(XX,YY,UU,VV)
+        ax2.streamplot(XX,YY,UU,VV,density =2,linewidth=0.5, color='white')
 
         plt.xlim([0, self.Lx - self.dx])
         plt.ylim([0, self.Ly - self.dy])
@@ -439,14 +442,23 @@ class TPSolver:
             axes[0].clear()
             axes[1].clear()
             
-            axes[0].contourf(XX,YY,PP,100)
-            axes[1].quiver(XX,YY,UU,VV)
+            ABSUV = np.sqrt(np.add(np.square(UU),np.square(VV)))
             
+            axes[0].contourf(XX,YY,PP, levels=30)
+            axes[0].set_xlabel('X-Domain}')
+            axes[0].set_ylabel('Y-Domain')
+            axes[0].set_title('Pressure Contour Plot')
+            axes[1].contourf(XX,YY,ABSUV, levels=100)
+            # axes[1].quiver(XX,YY,UU,VV)
+            axes[1].streamplot(XX,YY,UU,VV,density =2,linewidth=0.5,color='white')
+            axes[1].set_xlabel('X-Domain')
+            axes[1].set_ylabel('Y-Domain')
+            axes[1].set_title('Velocity Isolines and Contours')
             plt.xlim([0, self.Lx - self.dx])
             plt.ylim([0, self.Ly - self.dy])
             figure.canvas.draw()
             figure.canvas.flush_events()
-            plt.show(block=False)
+            # plt.show(block=False)
         except:
             raise ValueError('ERROR: Model went probably UNSTABLE! Check for NaN!')
             
@@ -1065,20 +1077,20 @@ def main():
     test.setDebug(False)
     test.setDensity(1.225)
     test.setKinematicViscosity(0.005)
-    test.setGridPoints(30,30)
+    test.setGridPoints(50,50)
     test.setDomainSize(1,1)
-    test.setTimeStep(0.001)
+    test.setTimeStep(0.005)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)   
     test.setInitialVelocity('top',4)
-    test.setInitialVelocity('right',4)
-    test.setInitialVelocity('bottom',-4)
-    test.setInitialVelocity('left',-4)
-    test.plotEveryNTimeSteps(30)
+    #test.setInitialVelocity('right',4)
+    test.setInitialVelocity('bottom',4)
+    #test.setInitialVelocity('left',-4)
+    test.plotEveryNTimeSteps(10)
     
-    # test.solve()
+    test.solve()
     # test.debugGPUmode()
-    test.runBenchmark(100)
+    # test.runBenchmark(100)
 
 
 if __name__ == '__main__':
