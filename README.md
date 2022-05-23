@@ -23,23 +23,40 @@ The GPU implementation requires a working cuda device (AMD devices have not been
  - [Cupy Website](https://cupy.dev/)
 
 ## Usage
+An instance of the TPSolver class can be instantiated with the following snippet:
 ```py
-test = TPSolver()
-test.enableGPU(True)
-test.setVerbose(True)
-test.setDebug(False)
-test.setDensity(1.225)
-test.setKinematicViscosity(0.005)
-test.setGridPoints(30,30)
-test.setDomainSize(1,1)
-test.setTimeStep(0.001)
-test.setSimulationTime(20)
-test.printTimeStatistics(True)   
-test.setInitialVelocity('top',4)
-test.setInitialVelocity('right',4)
-test.setInitialVelocity('bottom',-4)
-test.setInitialVelocity('left',-4)
-test.plotEveryNTimeSteps(30)
+TP = TPSolver(license = True, GPUmode = False)
+```
+where `license = true` is the default value to print out the license warning and `GPUmode = false` is the default value for running on the CPU.
+At this point, any interaction with the class can be done with the following methods:
+
+### Initialization Methods:
+#### Enable GPU:
+If this flag is activated, in normal run, the solver will run using the GPU.
+```py
+TP.enableGPU(True)
+```
+
+#### Set Verbose Printout:
+If this flag is activated, the solver will print out verbose options.
+```py
+TP.setVerbose(True)
+```
+
+```py
+TP.setDebug(False)
+TP.setDensity(1.225)
+TP.setKinematicViscosity(0.005)
+TP.setGridPoints(30,30)
+TP.setDomainSize(1,1)
+TP.setTimeStep(0.001)
+TP.setSimulationTime(20)
+TP.printTimeStatistics(True)   
+TP.setInitialVelocity('top',4)
+TP.setInitialVelocity('right',4)
+TP.setInitialVelocity('bottom',-4)
+TP.setInitialVelocity('left',-4)
+TP.plotEveryNTimeSteps(30)
 
 test.solve()
 # test.debugGPUmode()
