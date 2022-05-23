@@ -57,12 +57,12 @@ class TPSolver:
     debug = flagTimeStatistics = flagPlot = False
     verbose = True
     
-    def __init__(self, license = True, mode = False):
+    def __init__(self, license = True, GPUmode = False):
         if license:
             self.licenseDisclaimer()
-        if not mode:
+        if not GPUmode:
             return
-        self.flagGPU = mode
+        self.flagGPU = GPUmode
 
     def enableGPU(self,mode):
         self.flagGPU = mode
