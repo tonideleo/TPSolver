@@ -29,7 +29,7 @@ class TPSolver:
     
     Lx = 1          # Domain Length in x
     Ly = 1          # Domain Length in y
-    
+
     dt = 0.001      # Time Step Size
     tf = 1          # Simulation Time
     nsteps = 0      # Number of Time Steps
@@ -173,8 +173,17 @@ class TPSolver:
     def setDomainSize(self,Lx,Ly):
         self.Lx = Lx
         self.Ly = Ly
-    def setTimeStep(self,dt):
-        self.dt = dt
+    def setTimeStep(self):
+        #Convective time step restriction
+        CFL = 0.9
+        uMax = (max([abs(self.u_top), abs(self.u_bot)])**2.0 
+               + max([abs(self.v_left), abs(self.v_right)])**2.0)**0.5
+        dt_c = CFL*self.dx/uMax
+
+        #Diffusitve time step restriction
+        dt_d = CFL*self.dx**2.0/(4.0*self.nu)
+
+        self.dt = min([dt_c, dt_d])
         if self.debug:
             self.printDebug('Time Step',self.dt)
     def setSimulationTime(self,tf):
@@ -215,7 +224,7 @@ class TPSolver:
         self.dyi = 1/self.dy
     
         
-    def setInitialVelocity(self,loc,val):
+    def setWallVelocity(self,loc,val):
         loc = str.lower(loc)
         if loc == 'top':
             self.u_top = val
@@ -227,6 +236,7 @@ class TPSolver:
             self.v_right = val
         else:
             raise ValueError('Values can only be: top/bottom/left/right')
+        self.setTimeStep(self)
         
         
     def d2_mat_dirichlet_2d(self,nx, ny, dx, dy):
@@ -1079,13 +1089,13 @@ def main():
     test.setKinematicViscosity(0.005)
     test.setGridPoints(50,50)
     test.setDomainSize(1,1)
-    test.setTimeStep(0.005)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)   
-    test.setInitialVelocity('top',4)
-    #test.setInitialVelocity('right',4)
-    test.setInitialVelocity('bottom',4)
-    #test.setInitialVelocity('left',-4)
+    test.setWallVelocity('top',4)
+    #test.setWallVelocity('right',4)
+    test.setWallVelocity('bottom',4)
+    #test.setWallVelocity('left',-4)
+    #test.setTimeStep() #This is called within the setWallVelocity method
     test.plotEveryNTimeSteps(10)
     
     test.solve()
