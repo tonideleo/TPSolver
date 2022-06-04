@@ -476,7 +476,7 @@ class TPSolver:
         return figure, axes
         
     @cuda.jit()
-    def createLaplacian_device(vec,L):
+    def createLaplacian_kernel(vec,L):
         i,j = cuda.grid(2)
         dims = L.shape
         nx = int(vec[0])
@@ -506,7 +506,7 @@ class TPSolver:
             L[i,j] = 0
 
     @cuda.jit()
-    def uMomentumPredictor_device(vec,bds,u,v,us):
+    def uMomentumPredictor_kernel(vec,bds,u,v,us):
         i,j = cuda.grid(2)
         nu = vec[0]
         dxi = vec[1]
@@ -525,7 +525,7 @@ class TPSolver:
         us[i,j] = u[i,j] + dt*A
         
     @cuda.jit()
-    def vMomentumPredictor_device(vec,bds,u,v,vs):
+    def vMomentumPredictor_kernel(vec,bds,u,v,vs):
         i,j = cuda.grid(2)
         nu = vec[0]
         dxi = vec[1]
@@ -544,7 +544,7 @@ class TPSolver:
         vs[i,j] = v[i,j] + dt*B
         
     @cuda.jit()
-    def momentumPredictor_device(vec,bds,u,v,us,vs):
+    def momentumPredictor_kernel(vec,bds,u,v,us,vs):
         i,j = cuda.grid(2)
         nu = vec[0]
         dxi = vec[1]
@@ -587,7 +587,7 @@ class TPSolver:
         
         
     @cuda.jit()
-    def computeRHS_device(vec,bds,R,us,vs):
+    def computeRHS_kernel(vec,bds,R,us,vs):
         i,j = cuda.grid(2)
         rho = vec[4]
         dt = vec[3]
@@ -604,7 +604,7 @@ class TPSolver:
                            (vs[i,j+1] - vs[i,j]) * dyi)
         
     @cuda.jit()
-    def calculatePressure_device(bds,p,pv):
+    def calculatePressure_kernel(bds,p,pv):
         i,j = cuda.grid(2)
 
         if i < bds[0] - 1 or i > bds[1] - 1 or j < bds[2] - 1 or j > bds[3] - 1:
@@ -615,7 +615,7 @@ class TPSolver:
         p[i,j] = pv[n]
         
     @cuda.jit()
-    def correct_uvel_device(vec,bds,u,us,p):
+    def correct_uvel_kernel(vec,bds,u,us,p):
         i,j = cuda.grid(2)
         
         dxi = vec[1]
@@ -628,7 +628,7 @@ class TPSolver:
         u[i,j] = us[i,j] - dt/rho * (p[i,j] - p[i-1,j]) * dxi
         
     @cuda.jit()
-    def correct_vvel_device(vec,bds,v,vs,p):
+    def correct_vvel_kernel(vec,bds,v,vs,p):
         i,j = cuda.grid(2)
         
         dyi = vec[2]
@@ -641,7 +641,7 @@ class TPSolver:
         v[i,j] = vs[i,j] - dt/rho * (p[i,j] - p[i,j-1]) * dyi   
         
     @cuda.jit()
-    def correct_vel_device(vec,bds,u,v,us,vs,p):
+    def correct_vel_kernel(vec,bds,u,v,us,vs,p):
         i,j = cuda.grid(2)
         
         dxi = vec[1]
@@ -666,7 +666,7 @@ class TPSolver:
 
         
     @cuda.jit()
-    def apply_u_bc_device(bds,u,u_bc):
+    def apply_u_bc_kernel(bds,u,u_bc):
         i = cuda.grid(1)
         
         if i < 0 or i > bds[1]:
@@ -676,7 +676,7 @@ class TPSolver:
         u[i,bds[3]] = u[i,bds[3]-1] - 2 * (u[i,bds[3]-1] - u_bc[1])
         
     @cuda.jit()
-    def apply_v_bc_device(bds,v,v_bc):
+    def apply_v_bc_kernel(bds,v,v_bc):
         i = cuda.grid(1)
         
         if i < 0 or i > bds[1]:
@@ -693,7 +693,7 @@ class TPSolver:
         d_L = cuda.to_device(self.L)
         gridDims = [(dims[0]+TPB-1)//TPB, (dims[1]+TPB-1)//TPB]
         blockDims = [TPB, TPB]
-        self.createLaplacian_device[gridDims,blockDims](d_vec,d_L)
+        self.createLaplacian_kernel[gridDims,blockDims](d_vec,d_L)
 
         return d_L.copy_to_host()
     
@@ -744,7 +744,7 @@ class TPSolver:
                 
 
             # # (1-2) u-v Predictors
-            # self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            # self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
             # self.uMomentumPredictor()
             # us_gpu = cp.asnumpy(d_us)
             # self.printDebug('us - GPU',us_gpu) 
@@ -756,7 +756,7 @@ class TPSolver:
                 
             # # (1) u Predictor
             self.uMomentumPredictor()
-            self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
+            self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
 
             # us_gpu = d_us.copy_to_host()
             us_gpu = cp.asnumpy(d_us)
@@ -765,7 +765,7 @@ class TPSolver:
             
             # (2) v Predictor
             self.vMomentumPredictor()
-            self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
             # vs_gpu = d_vs.copy_to_host()
             vs_gpu = cp.asnumpy(d_vs)
             self.printDebug('vs - GPU',vs_gpu) 
@@ -773,7 +773,7 @@ class TPSolver:
             
             # (3) RHS
             self.computeRHS()
-            self.computeRHS_device[gridDims,blockDims](vec,d_bds,d_R,d_us,d_vs)
+            self.computeRHS_kernel[gridDims,blockDims](vec,d_bds,d_R,d_us,d_vs)
             # RHS_gpu = d_R.copy_to_host()
             RHS_gpu = cp.asnumpy(d_R)
             self.printDebug('RHS - GPU',RHS_gpu)
@@ -784,7 +784,7 @@ class TPSolver:
             
             # (4) Calculate Pressure
             self.calculatePressure()
-            self.calculatePressure_device[gridDims,blockDims](d_bds,d_p,d_pv)
+            self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
             # p_gpu = d_p.copy_to_host()
             p_gpu = cp.asnumpy(d_p)
             self.printDebug('Pressure - GPU',p_gpu)
@@ -797,7 +797,7 @@ class TPSolver:
             
             # ######## THIS DOESN'T WORK!!!! NEED TO DEBUG #########
             
-            # self.correct_vel_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
+            # self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
             # u_gpu = cp.asnumpy(d_u)
             # v_gpu = cp.asnumpy(d_v)     
             # self.printDebug('Corrected u (Before BC)',self.u)  
@@ -811,8 +811,8 @@ class TPSolver:
             self.debug = False
             self.correctVelocities()
             self.debug = True
-            self.correct_uvel_device[gridDims,blockDims](vec,bds,d_u,d_us,d_p)
-            self.correct_vvel_device[gridDims,blockDims](vec,bds,d_v,d_vs,d_p)
+            self.correct_uvel_kernel[gridDims,blockDims](vec,bds,d_u,d_us,d_p)
+            self.correct_vvel_kernel[gridDims,blockDims](vec,bds,d_v,d_vs,d_p)
             u_gpu = cp.asnumpy(d_u)
             v_gpu = cp.asnumpy(d_v)
             self.printDebug('Corrected u (Before BC)',self.u)  
@@ -824,8 +824,8 @@ class TPSolver:
             
             # (6) Apply BC
             self.setBoundaryConditions()
-            self.apply_u_bc_device[32,(self.imax+32-1)//32](bds,d_u,d_u_bc)
-            self.apply_v_bc_device[32,(self.jmax+32-1)//32](bds,d_v,d_v_bc)
+            self.apply_u_bc_kernel[32,(self.imax+32-1)//32](bds,d_u,d_u_bc)
+            self.apply_v_bc_kernel[32,(self.jmax+32-1)//32](bds,d_v,d_v_bc)
             # u_gpu = d_u.copy_to_host()
             # v_gpu = d_v.copy_to_host()
             u_gpu = cp.asnumpy(d_u)
@@ -838,7 +838,7 @@ class TPSolver:
     def checkNaN(self):
         pass
             
-    def solve_kernel(self):
+    def solve_parallel(self):
         # cuda.profile_start()
         TPB = 4
         
@@ -878,17 +878,17 @@ class TPSolver:
         start = time.time()
         while self.t <= self.tf:
             self.t += self.dt
-            self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-            self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
+            self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
             # Not properly working yet, need debug
-            # self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
-            self.computeRHS_device[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
+            # self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             d_pv = cp.linalg.solve(d_L,d_R)
-            self.calculatePressure_device[gridDims,blockDims](d_bds,d_p,d_pv)
-            self.correct_uvel_device[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
-            self.correct_vvel_device[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
-            self.apply_u_bc_device[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
-            self.apply_v_bc_device[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
+            self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
+            self.correct_uvel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
+            self.correct_vvel_kernel[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
+            self.apply_u_bc_kernel[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
+            self.apply_v_bc_kernel[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
             if first_plot and self.flagPlot:
                 fig, axes = self.initializeFigure()
                 first_plot = False
@@ -918,7 +918,7 @@ class TPSolver:
         
         
         if self.flagGPU:
-            time_elapsed = self.solve_kernel()
+            time_elapsed = self.solve_parallel()
         else:
             first_plot = True
             it = 1
@@ -1044,16 +1044,16 @@ class TPSolver:
         while it <= N:
             self.t += self.dt
             # Not working?
-            #self.momentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
-            self.uMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-            self.vMomentumPredictor_device[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
-            self.computeRHS_device[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
+            #self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
+            self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             d_pv = cp.linalg.solve(d_L,d_R)
-            self.calculatePressure_device[gridDims,blockDims](d_bds,d_p,d_pv)
-            self.correct_uvel_device[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
-            self.correct_vvel_device[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
-            self.apply_u_bc_device[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
-            self.apply_v_bc_device[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
+            self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
+            self.correct_uvel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
+            self.correct_vvel_kernel[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
+            self.apply_u_bc_kernel[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
+            self.apply_v_bc_kernel[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
             bar.next()
             it += 1
         end = time.time()
