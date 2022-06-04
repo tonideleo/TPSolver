@@ -236,7 +236,7 @@ class TPSolver:
             self.v_right = val
         else:
             raise ValueError('Values can only be: top/bottom/left/right')
-        self.setTimeStep(self)
+        self.setTimeStep()
         
         
     def d2_mat_dirichlet_2d(self,nx, ny, dx, dy):
@@ -1082,7 +1082,7 @@ class TPSolver:
 def main():
     clearConsole()
     test = TPSolver(False)
-    test.enableGPU(True)
+    test.enableGPU(False)
     test.setVerbose(True)
     test.setDebug(False)
     test.setDensity(1.225)
@@ -1091,6 +1091,7 @@ def main():
     test.setDomainSize(1,1)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)   
+    test.createComputationalMesh()
     test.setWallVelocity('top',4)
     #test.setWallVelocity('right',4)
     test.setWallVelocity('bottom',4)
