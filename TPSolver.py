@@ -176,7 +176,7 @@ class TPSolver:
         self.Ly = Ly
     def setTimeStep(self):
         #Convective time step restriction
-        CFL = 0.5
+        CFL = 0.25
         uMax = (max([abs(self.u_top), abs(self.u_bot)])**2.0 
                + max([abs(self.v_left), abs(self.v_right)])**2.0)**0.5
         dt_c = CFL*self.dx/uMax
@@ -316,8 +316,9 @@ class TPSolver:
                         self.L[i+(j)*self.nx,i+(jj)*self.nx] = -self.dyi*self.dyi
                     else:
                         self.L[i+(j)*self.nx,i+(j)*self.nx] += -self.dyi*self.dyi
-        self.L[0,:] = 0
-        self.L[0,0] = 1
+        ind = self.nx*self.ny//2 - 1
+        self.L[ind,:] = 0
+        self.L[ind,ind] = 1
         
         # TO DEBUG - BUILD LAPLACIAN IN SPARSE FORM
         # L2 = self.laplacian2D(self.nx*self.ny)
@@ -330,7 +331,7 @@ class TPSolver:
             np.set_printoptions(edgeitems=30, linewidth=100000,formatter=dict(float=lambda x: "  %.3g  " % x))
             self.printDebug('Laplacian Matrix',self.L)
 
-    def uMomentumPredictor(self):
+    def MomentumPredictor(self):
         for j in range(self.jmin,self.jmax+1):
             for i in range(self.imin,self.imax+1):
                 A = (self.nu*(self.u[i-1,j]-2*self.u[i,j]+self.u[i+1,j])*self.dxi**2 +
@@ -338,24 +339,16 @@ class TPSolver:
                     self.u[i,j]*(self.u[i+1,j]-self.u[i-1,j])*0.5*self.dxi -
                     (0.25*(self.v[i-1,j]+self.v[i-1,j+1]+self.v[i,j]+self.v[i,j+1]))*
                     (self.u[i,j+1]-self.u[i,j-1])*0.5*self.dyi)
-                # print(i,j)
-                self.us[i,j] = self.u[i,j] + self.dt*A
-        if self.debug:
-            self.printDebug('us',self.us)                
-                
-    def vMomentumPredictor(self):
-        for j in range(self.jmin,self.jmax+1):
-            for i in range(self.imin,self.imax+1):
                 B = (self.nu*(self.v[i-1,j]-2*self.v[i,j]+self.v[i+1,j])*self.dxi**2 +
                     self.nu*(self.v[i,j-1]-2*self.v[i,j]+self.v[i,j+1])*self.dyi**2 - 
                     (0.25*(self.u[i,j-1]+self.u[i+1,j-1]+self.u[i,j]+self.u[i+1,j]))*
                     (self.v[i+1,j]-self.v[i-1,j])*0.5*self.dxi -
                     self.v[i,j]*(self.v[i,j+1]-self.v[i,j-1])*0.5*self.dyi)
-                # print(i,j)
+                self.us[i,j] = self.u[i,j] + self.dt*A
                 self.vs[i,j] = self.v[i,j] + self.dt*B
         if self.debug:
-            self.printDebug('vs',self.vs)        
-                
+            self.printDebug('us',self.us)                
+
     def computeRHS(self):
         n = 0
         for j in range(self.jmin,self.jmax+1):
@@ -384,25 +377,27 @@ class TPSolver:
             for i in range(self.imin,self.imax+1):
                 self.u[i,j] = self.us[i,j] - self.dt/self.rho * (self.p[i,j] - self.p[i-1,j])*self.dxi
                 self.v[i,j] = self.vs[i,j] - self.dt/self.rho * (self.p[i,j] - self.p[i,j-1])*self.dyi
-#        for j in range(self.jmin,self.jmax):
-#            for i in range(self.imin,self.imax):
         if self.debug:
             self.printDebug('Corrected u (Before BC)',self.u)   
             self.printDebug('Corrected v (Before BC)',self.v)  
         
-    def setBoundaryConditions(self):
-        self.u[:,self.jmin-1] = self.u[:,self.jmin] - 2*(self.u[:,self.jmin] - self.u_bot)
-        self.u[:,self.jmax+1] = self.u[:,self.jmax] - 2*(self.u[:,self.jmax] - self.u_top)
-        self.v[self.imin-1,:] = self.v[self.imin,:] - 2 *(self.v[self.imin,:] - self.v_left)
-        self.v[self.imax+1,:] = self.v[self.imax,:] - 2 *(self.v[self.imax,:] - self.v_right)
-        self.us[:,self.jmin-1] = self.us[:,self.jmin] - 2*(self.us[:,self.jmin] - self.u_bot)
-        self.us[:,self.jmax+1] = self.us[:,self.jmax] - 2*(self.us[:,self.jmax] - self.u_top)
-        self.vs[self.imin-1,:] = self.vs[self.imin,:] - 2 *(self.vs[self.imin,:] - self.v_left)
-        self.vs[self.imax+1,:] = self.vs[self.imax,:] - 2 *(self.vs[self.imax,:] - self.v_right)
-        self.p[:,self.jmin-1] = self.p[:,self.jmin]
-        self.p[:,self.jmax+1] = self.p[:,self.jmax]
-        self.p[self.imin-1,:] = self.p[self.imin,:]
-        self.p[self.imax+1,:] = self.p[self.imax,:]
+    def setBoundaryConditions(self,val):
+        val = str.lower(val)
+        if val == "corrected":
+            self.u[:,self.jmin-1] = self.u[:,self.jmin] - 2*(self.u[:,self.jmin] - self.u_bot)
+            self.u[:,self.jmax+1] = self.u[:,self.jmax] - 2*(self.u[:,self.jmax] - self.u_top)
+            self.v[self.imin-1,:] = self.v[self.imin,:] - 2 *(self.v[self.imin,:] - self.v_left)
+            self.v[self.imax+1,:] = self.v[self.imax,:] - 2 *(self.v[self.imax,:] - self.v_right)
+        elif val == "pressure":
+            self.p[:,self.jmin-1] = self.p[:,self.jmin]
+            self.p[:,self.jmax+1] = self.p[:,self.jmax]
+            self.p[self.imin-1,:] = self.p[self.imin,:]
+            self.p[self.imax+1,:] = self.p[self.imax,:]
+        elif val == "star":
+            self.us[:,self.jmin-1] = self.us[:,self.jmin] - 2*(self.us[:,self.jmin] - self.u_bot)
+            self.us[:,self.jmax+1] = self.us[:,self.jmax] - 2*(self.us[:,self.jmax] - self.u_top)
+            self.vs[self.imin-1,:] = self.vs[self.imin,:] - 2 *(self.vs[self.imin,:] - self.v_left)
+            self.vs[self.imax+1,:] = self.vs[self.imax,:] - 2 *(self.vs[self.imax,:] - self.v_right)
         
         if self.debug:
             self.printDebug('Corrected u (After BC)',self.u)   
@@ -752,20 +747,8 @@ class TPSolver:
                 self.printDebug('Time',self.t)
                 print('\n')   
                 
-
-            # # (1-2) u-v Predictors
-            # self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
-            # self.uMomentumPredictor()
-            # us_gpu = cp.asnumpy(d_us)
-            # self.printDebug('us - GPU',us_gpu) 
-            # np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
-            # vs_gpu = cp.asnumpy(d_vs)
-            # self.vMomentumPredictor()
-            # self.printDebug('vs - GPU',vs_gpu) 
-            # np.testing.assert_allclose(self.vs, vs_gpu, atol = 1e-3)
-                
-            # # (1) u Predictor
-            self.uMomentumPredictor()
+            # # (1) momentum Predictor
+            self.MomentumPredictor()
             self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
 
             # us_gpu = d_us.copy_to_host()
@@ -774,7 +757,6 @@ class TPSolver:
             np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
             
             # (2) v Predictor
-            self.vMomentumPredictor()
             self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
             # vs_gpu = d_vs.copy_to_host()
             vs_gpu = cp.asnumpy(d_vs)
@@ -833,7 +815,7 @@ class TPSolver:
             np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3)
             
             # (6) Apply BC
-            self.setBoundaryConditions()
+            self.setBoundaryConditions('corrected')
             self.apply_u_bc_kernel[32,(self.imax+32-1)//32](bds,d_u,d_u_bc)
             self.apply_v_bc_kernel[32,(self.jmax+32-1)//32](bds,d_v,d_v_bc)
             # u_gpu = d_u.copy_to_host()
@@ -921,7 +903,7 @@ class TPSolver:
     def solve(self):
         
         self.createComputationalMesh()
-        self.setBoundaryConditions()
+        self.setBoundaryConditions('corrected')
         self.createLaplacian()
         
         if self.verbose:
@@ -945,13 +927,13 @@ class TPSolver:
                     print('\n')
                     self.printDebug('Time',self.t)
                     print('\n')
-                self.uMomentumPredictor()
-                self.vMomentumPredictor()
-                self.setBoundaryConditions()
+                self.MomentumPredictor()
+                self.setBoundaryConditions('star')
                 self.computeRHS()
                 self.calculatePressure()
+                self.setBoundaryConditions('pressure')
                 self.correctVelocities()
-                self.setBoundaryConditions()
+                self.setBoundaryConditions('corrected')
                 if it % self.plot_frequency == 0 and self.flagPlot: 
                     fig, axes = self.updatePlot(fig, axes)
                 bar.next()
@@ -995,12 +977,11 @@ class TPSolver:
         while it <= N:
             # Update Time
             self.t += self.dt
-            self.uMomentumPredictor()
-            self.vMomentumPredictor()
+            self.MomentumPredictor()
             self.computeRHS()
             self.calculatePressure()
             self.correctVelocities()
-            self.setBoundaryConditions()
+            self.setBoundaryConditions('corrected')
             bar.next()
             it += 1
         end = time.time()
@@ -1113,12 +1094,12 @@ def main():
     test.setSimulationTime(20)
     test.printTimeStatistics(True)   
     test.createComputationalMesh()
-    #test.setWallVelocity('top',4)
+    test.setWallVelocity('top',4)
     #test.setWallVelocity('right',4)
     test.setWallVelocity('bottom',4)
-    #test.setWallVelocity('left',-4)
+    #test.setWallVelocity('left',4)
     #test.setTimeStep() #This is called within the setWallVelocity method
-    test.plotEveryNTimeSteps(1)
+    test.plotEveryNTimeSteps(10)
     
     test.solve()
     # test.debugGPUmode()
