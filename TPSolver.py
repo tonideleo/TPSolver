@@ -1,6 +1,8 @@
+from re import A
 from turtle import color
 import numpy as np
 import cupy as cp
+from regex import W
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
 
@@ -39,7 +41,7 @@ class TPSolver:
     imin = imax = jmin = jmax = 0
     
     # Miscellaneous
-    __type = np.float32
+    __type = np.float64
     flagGPU = False
     linelenght = 70
     plot_frequency = 100
@@ -175,7 +177,7 @@ class TPSolver:
         self.Ly = Ly
     def setTimeStep(self):
         #Convective time step restriction
-        CFL = 0.9
+        CFL = 0.75
         uMax = (max([abs(self.u_top), abs(self.u_bot)])**2.0 
                + max([abs(self.v_left), abs(self.v_right)])**2.0)**0.5
         dt_c = CFL*self.dx/uMax
@@ -195,31 +197,31 @@ class TPSolver:
         if self.debug:
             self.printDebug('Total Number of Steps',self.nsteps)
     def createComputationalMesh(self):
-        self.imin = 2
+        self.imin = 1
         self.imax = self.imin + self.nx - 1
-        self.jmin = 2
+        self.jmin = 1
         self.jmax = self.jmin + self.ny - 1
-        self.x[self.imin-1:self.imax+1] = np.linspace(0,self.Lx,self.nx + 1, dtype=self.__type)
-        self.y[self.jmin-1:self.jmax+1] = np.linspace(0,self.Ly,self.ny + 1, dtype=self.__type)
-        self.xm[self.imin-1:self.imax] = 0.5 * (self.x[self.imin-1:self.imax] + self.x[self.imin:self.imax+1])
-        self.ym[self.jmin-1:self.jmax] = 0.5 * (self.y[self.jmin-1:self.jmax] + self.y[self.jmin:self.jmax+1])
+        self.x[self.imin:self.imax+2] = np.linspace(0,self.Lx,self.nx + 1, dtype=self.__type)
+        self.y[self.jmin:self.jmax+2] = np.linspace(0,self.Ly,self.ny + 1, dtype=self.__type)
+        self.xm[self.imin:self.imax+1] = 0.5 * (self.x[self.imin:self.imax+1] + self.x[self.imin+1:self.imax+2])
+        self.ym[self.jmin:self.jmax+1] = 0.5 * (self.y[self.jmin:self.jmax+1] + self.y[self.jmin+1:self.jmax+2])
         
         self.calculateNumberOfTimeSteps()
         
         # Preallocate Matrices
-        self.p=np.zeros((self.imax,self.jmax), dtype=self.__type)
-        self.us=np.zeros((self.imax+1,self.jmax+1), dtype=self.__type)
-        self.vs=np.zeros((self.imax+1,self.jmax+1), dtype=self.__type)
+        self.p=np.zeros((self.imax+2,self.jmax+2), dtype=self.__type)
+        self.us=np.zeros((self.imax+2,self.jmax+2), dtype=self.__type)
+        self.vs=np.zeros((self.imax+2,self.jmax+2), dtype=self.__type)
         self.L=np.zeros((self.nx*self.ny,self.nx*self.ny), dtype=self.__type)
-        self.u=np.zeros((self.imax+1,self.jmax+1), dtype=self.__type)
-        self.v=np.zeros((self.imax+1,self.jmax+1), dtype=self.__type)
+        self.u=np.zeros((self.imax+2,self.jmax+2), dtype=self.__type)
+        self.v=np.zeros((self.imax+2,self.jmax+2), dtype=self.__type)
         
         # Preallocate Arrays
         self.R=np.zeros(self.nx*self.ny, dtype=self.__type)
         self.t=0
         
-        self.dx = self.x[self.imin] - self.x[self.imin-1]
-        self.dy = self.y[self.jmin] - self.y[self.jmin-1]
+        self.dx = self.x[self.imin+1] - self.x[self.imin]
+        self.dy = self.y[self.jmin+1] - self.y[self.jmin]
         self.dxi = 1/self.dx
         self.dyi = 1/self.dy
     
@@ -302,21 +304,22 @@ class TPSolver:
             for i in range(self.nx):
                 self.L[i+(j)*self.nx, i+(j)*self.nx] = 2*self.dxi*self.dxi + 2*self.dyi*self.dyi
                 for ii in range(i-1,i+2,2):
-                    if ii +1> 0 and ii +1<= self.nx:
+                    if ii+1 > 0 and ii+1 <= self.nx:
                         # print(i,j,ii)
                         # print(i+(j)*self.nx,ii+(j)*self.nx)
                         self.L[i+(j)*self.nx,ii+(j)*self.nx] = -self.dxi*self.dxi
                     else:
                         self.L[i+(j)*self.nx,i+(j)*self.nx] += -self.dxi*self.dxi
                 for jj in range(j-1,j+2,2):
-                    if jj +1> 0 and jj +1<= self.ny:
+                    if jj+1 > 0 and jj+1 <= self.ny:
                         # print(i,j,jj)
                         # print(i+(j)*self.nx,i+(jj)*self.nx)
                         self.L[i+(j)*self.nx,i+(jj)*self.nx] = -self.dyi*self.dyi
                     else:
                         self.L[i+(j)*self.nx,i+(j)*self.nx] += -self.dyi*self.dyi
-        self.L[0,:] = 0
-        self.L[0,0] = 1
+        ind = 0
+        self.L[ind,:] = 0
+        self.L[ind,ind] = 1
         
         # TO DEBUG - BUILD LAPLACIAN IN SPARSE FORM
         # L2 = self.laplacian2D(self.nx*self.ny)
@@ -329,36 +332,28 @@ class TPSolver:
             np.set_printoptions(edgeitems=30, linewidth=100000,formatter=dict(float=lambda x: "  %.3g  " % x))
             self.printDebug('Laplacian Matrix',self.L)
 
-    def uMomentumPredictor(self):
-        for j in range(self.jmin-1,self.jmax):
-            for i in range(self.imin,self.imax):
+    def MomentumPredictor(self):
+        for j in range(self.jmin,self.jmax+1):
+            for i in range(self.imin,self.imax+1):
                 A = (self.nu*(self.u[i-1,j]-2*self.u[i,j]+self.u[i+1,j])*self.dxi**2 +
                     self.nu*(self.u[i,j-1]-2*self.u[i,j]+self.u[i,j+1])*self.dyi**2 - 
                     self.u[i,j]*(self.u[i+1,j]-self.u[i-1,j])*0.5*self.dxi -
                     (0.25*(self.v[i-1,j]+self.v[i-1,j+1]+self.v[i,j]+self.v[i,j+1]))*
                     (self.u[i,j+1]-self.u[i,j-1])*0.5*self.dyi)
-                # print(i,j)
-                self.us[i,j] = self.u[i,j] + self.dt*A
-        if self.debug:
-            self.printDebug('us',self.us)                
-                
-    def vMomentumPredictor(self):
-        for j in range(self.jmin,self.jmax):
-            for i in range(self.imin-1,self.imax):
                 B = (self.nu*(self.v[i-1,j]-2*self.v[i,j]+self.v[i+1,j])*self.dxi**2 +
                     self.nu*(self.v[i,j-1]-2*self.v[i,j]+self.v[i,j+1])*self.dyi**2 - 
                     (0.25*(self.u[i,j-1]+self.u[i+1,j-1]+self.u[i,j]+self.u[i+1,j]))*
                     (self.v[i+1,j]-self.v[i-1,j])*0.5*self.dxi -
                     self.v[i,j]*(self.v[i,j+1]-self.v[i,j-1])*0.5*self.dyi)
-                # print(i,j)
+                self.us[i,j] = self.u[i,j] + self.dt*A
                 self.vs[i,j] = self.v[i,j] + self.dt*B
         if self.debug:
-            self.printDebug('vs',self.vs)        
-                
+            self.printDebug('us',self.us)                
+
     def computeRHS(self):
         n = 0
-        for j in range(self.jmin-1,self.jmax):
-            for i in range(self.imin-1,self.imax):
+        for j in range(self.jmin,self.jmax+1):
+            for i in range(self.imin,self.imax+1):
                 # print(n, (i-self.imin+1)+(j - self.jmin+1)*(self.jmax-1))
                 # print(i,j,n,(j-1)*(self.imax-self.imin + 1) + i - 1)
                 self.R[n] = -self.rho/self.dt * (
@@ -371,29 +366,52 @@ class TPSolver:
     def calculatePressure(self):
         pv = np.linalg.solve(self.L,self.R)
         n = 0
-        for j in range(self.jmin-1,self.jmax):
-            for i in range(self.imin-1,self.imax):
+        for j in range(self.jmin,self.jmax+1):
+            for i in range(self.imin,self.imax+1):
                 self.p[i,j] = pv[n]
                 n += 1
         if self.debug:
             self.printDebug('Pressure',self.p)   
                          
     def correctVelocities(self):
-        for j in range(self.jmin-1,self.jmax):
-            for i in range(self.imin,self.imax):
+        for j in range(self.jmin,self.jmax+1):
+            for i in range(self.imin,self.imax+1):
                 self.u[i,j] = self.us[i,j] - self.dt/self.rho * (self.p[i,j] - self.p[i-1,j])*self.dxi
-        for j in range(self.jmin,self.jmax):
-            for i in range(self.imin-1,self.imax):
                 self.v[i,j] = self.vs[i,j] - self.dt/self.rho * (self.p[i,j] - self.p[i,j-1])*self.dyi
         if self.debug:
             self.printDebug('Corrected u (Before BC)',self.u)   
             self.printDebug('Corrected v (Before BC)',self.v)  
         
-    def setBoundaryConditions(self):
-        self.u[:,self.jmin-2] = self.u[:,self.jmin-1] - 2*(self.u[:,self.jmin-1] - self.u_bot)
-        self.u[:,self.jmax] = self.u[:,self.jmax-1] - 2*(self.u[:,self.jmax-1] - self.u_top)
-        self.v[self.imin-2,:] = self.v[self.imin-1,:] - 2 *(self.v[self.imin-1,:] - self.v_left)
-        self.v[self.imax,:] = self.v[self.imax-1,:] - 2 *(self.v[self.imax-1,:] - self.v_right)
+    def setBoundaryConditions(self,val):
+        val = str.lower(val)
+        if val == "corrected":
+            self.u[:,self.jmin-1] = self.u[:,self.jmin] - 2*(self.u[:,self.jmin] - self.u_bot)
+            self.u[:,self.jmax+1] = self.u[:,self.jmax] - 2*(self.u[:,self.jmax] - self.u_top)
+            self.v[self.imin-1,:] = self.v[self.imin,:] - 2 *(self.v[self.imin,:] - self.v_left)
+            self.v[self.imax+1,:] = self.v[self.imax,:] - 2 *(self.v[self.imax,:] - self.v_right)
+            #Set corners to zero
+            self.v[0,self.jmax+1] = 0.0
+            self.u[self.imax+1,0] = 0.0
+            #Set wall velocity to zero
+            self.u[1,:] = 0.0
+            self.v[:,1] = 0.0
+        elif val == "pressure":
+            self.p[:,self.jmin-1] = self.p[:,self.jmin]
+            self.p[:,self.jmax+1] = self.p[:,self.jmax]
+            self.p[self.imin-1,:] = self.p[self.imin,:]
+            self.p[self.imax+1,:] = self.p[self.imax,:]
+        elif val == "star":
+            self.us[:,self.jmin-1] = self.us[:,self.jmin] - 2*(self.us[:,self.jmin] - self.u_bot)
+            self.us[:,self.jmax+1] = self.us[:,self.jmax] - 2*(self.us[:,self.jmax] - self.u_top)
+            self.vs[self.imin-1,:] = self.vs[self.imin,:] - 2 *(self.vs[self.imin,:] - self.v_left)
+            self.vs[self.imax+1,:] = self.vs[self.imax,:] - 2 *(self.vs[self.imax,:] - self.v_right)
+            #Set corners to zero
+            self.vs[0,self.jmax+1] = 0.0
+            self.us[self.imax+1,0] = 0.0
+            #Set wall velocity to zero
+            self.us[1,:] = 0.0
+            self.vs[:,1] = 0.0
+        
         if self.debug:
             self.printDebug('Corrected u (After BC)',self.u)   
             self.printDebug('Corrected v (After BC)',self.v) 
@@ -401,9 +419,9 @@ class TPSolver:
     def plotContour(self):
         self.checkNaN()
         figure, ax = plt.subplots(figsize=(5,5))
-        XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
+        XX,YY = np.meshgrid(self.x[self.imin:self.imax+1],self.y[self.jmin:self.jmax+1])
         ax.contourf(XX, YY,
-                    np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax]),
+                    np.transpose(self.p[self.imin:self.imax+1,self.jmin:self.jmax+1]),
                     10, cmap=plt.cm.bone, origin='lower')
         plt.xlim([0, self.Lx - self.dx])
         plt.ylim([0, self.Ly - self.dy])
@@ -411,9 +429,9 @@ class TPSolver:
         
     def plotQuiver(self):
         figure, ax = plt.subplots(figsize=(5,5))
-        XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
-        UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax])
-        VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
+        XX,YY = np.meshgrid(self.x[self.imin:self.imax+1],self.y[self.jmin:self.jmax+1])
+        UU = np.transpose(self.u[self.imin:self.imax+1,self.jmin:self.jmax+1])
+        VV = np.transpose(self.v[self.imin:self.imax+1,self.jmin:self.jmax+1])
         plt.quiver(XX,YY,UU,VV)
         plt.xlim([0, self.Lx - self.dx])
         plt.ylim([0, self.Ly - self.dy])
@@ -424,10 +442,10 @@ class TPSolver:
         fig, (ax1, ax2) = plt.subplots(1,2,sharex=True,sharey=True,figsize = (16,8))
         fig.suptitle('Results')
         
-        XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
-        PP = np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax])
-        UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax]) + 1
-        VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
+        XX,YY = np.meshgrid(self.x[self.imin:self.imax+1],self.y[self.jmin:self.jmax+1])
+        PP = np.transpose(self.p[self.imin:self.imax+1,self.jmin:self.jmax+1])
+        UU = np.transpose(self.u[self.imin:self.imax+1,self.jmin:self.jmax+1]) + 1
+        VV = np.transpose(self.v[self.imin:self.imax+1,self.jmin:self.jmax+1])
         
         ax1.contourf(XX,YY,PP)
         ax1.set_xlabel('test')
@@ -443,10 +461,10 @@ class TPSolver:
         
     def updatePlot(self, figure, axes):
         try:
-            XX,YY = np.meshgrid(self.x[self.imin-1:self.imax],self.y[self.jmin-1:self.jmax])
-            PP = np.transpose(self.p[self.imin-1:self.imax,self.jmin-1:self.jmax])
-            UU = np.transpose(self.u[self.imin-1:self.imax,self.jmin-1:self.jmax])
-            VV = np.transpose(self.v[self.imin-1:self.imax,self.jmin-1:self.jmax])
+            XX,YY = np.meshgrid(self.x[self.imin:self.imax+1],self.y[self.jmin:self.jmax+1])
+            PP = np.transpose(self.p[self.imin:self.imax+1,self.jmin:self.jmax+1])
+            UU = np.transpose(self.u[self.imin:self.imax+1,self.jmin:self.jmax+1])
+            VV = np.transpose(self.v[self.imin:self.imax+1,self.jmin:self.jmax+1])
             # color = np.sqrt(UU**2 - VV**2)
             
             axes[0].clear()
@@ -455,7 +473,7 @@ class TPSolver:
             ABSUV = np.sqrt(np.add(np.square(UU),np.square(VV)))
             
             axes[0].contourf(XX,YY,PP, levels=30)
-            axes[0].set_xlabel('X-Domain}')
+            axes[0].set_xlabel('X-Domain')
             axes[0].set_ylabel('Y-Domain')
             axes[0].set_title('Pressure Contour Plot')
             axes[1].contourf(XX,YY,ABSUV, levels=100)
@@ -479,10 +497,7 @@ class TPSolver:
     def createLaplacian_kernel(vec,L):
         i,j = cuda.grid(2)
         dims = L.shape
-        nx = int(vec[0])
-        ny = int(vec[1])
-        dxi = float(vec[2])
-        dyi = float(vec[3])
+        nx, ny, dxi, dyi = vec
         
         if i >= dims[0] or j >= dims[1]:
             return
@@ -504,101 +519,39 @@ class TPSolver:
             L[i,j] = 1
         elif i == 0 and j != 0:
             L[i,j] = 0
-
-    @cuda.jit()
-    def uMomentumPredictor_kernel(vec,bds,u,v,us):
-        i,j = cuda.grid(2)
-        nu = vec[0]
-        dxi = vec[1]
-        dyi = vec[2]
-        dt = vec[3]
-        
-        if i < bds[0] or i > bds[1] - 1 or j < bds[2] - 1 or j > bds[3] - 1:
-            return
-        
-        A = (nu*(u[i-1,j]-2*u[i,j]+u[i+1,j])*dxi*dxi +
-            nu*(u[i,j-1]-2*u[i,j]+u[i,j+1])*dyi*dyi - 
-            u[i,j]*(u[i+1,j]-u[i-1,j])*0.5*dxi -
-            (0.25*(v[i-1,j]+v[i-1,j+1]+v[i,j]+v[i,j+1]))*
-            (u[i,j+1]-u[i,j-1])*0.5*dyi)
-        
-        us[i,j] = u[i,j] + dt*A
-        
-    @cuda.jit()
-    def vMomentumPredictor_kernel(vec,bds,u,v,vs):
-        i,j = cuda.grid(2)
-        nu = vec[0]
-        dxi = vec[1]
-        dyi = vec[2]
-        dt = vec[3]
-        
-        if i < bds[0] - 1 or i > bds[1] - 1 or j < bds[2] or j > bds[3] - 1:
-            return
-        
-        B = (nu*(v[i-1,j]-2*v[i,j]+v[i+1,j])*dxi**2 +
-            nu*(v[i,j-1]-2*v[i,j]+v[i,j+1])*dyi**2 - 
-            (0.25*(u[i,j-1]+u[i+1,j-1]+u[i,j]+u[i+1,j]))*
-            (v[i+1,j]-v[i-1,j])*0.5*dxi -
-            v[i,j]*(v[i,j+1]-v[i,j-1])*0.5*dyi)
-        
-        vs[i,j] = v[i,j] + dt*B
         
     @cuda.jit()
     def momentumPredictor_kernel(vec,bds,u,v,us,vs):
         i,j = cuda.grid(2)
-        nu = vec[0]
-        dxi = vec[1]
-        dyi = vec[2]
-        dt = vec[3]
+
+        nu, dxi, dyi, dt, rho = vec
+        imin, imax, jmin, jmax = bds
         
-        # Upper bounds are the same
-        if i > bds[1] - 1 or j > bds[3] - 1:
+        if i < imin or i > imax or j < jmin or j > jmax:
             return
-        
-        # Common Lower bounds
-        if i >= bds[0] and j >= bds[2]:
+
+        vs[i,j] = v[i,j] + dt*(nu*(v[i-1,j]-2*v[i,j]+v[i+1,j])*dxi**2 +
+                                nu*(v[i,j-1]-2*v[i,j]+v[i,j+1])*dyi**2 - 
+                                (0.25*(u[i,j-1]+u[i+1,j-1]+u[i,j]+u[i+1,j]))*
+                                (v[i+1,j]-v[i-1,j])*0.5*dxi -
+                                v[i,j]*(v[i,j+1]-v[i,j-1])*0.5*dyi)
             
-            vs[i,j] = v[i,j] + dt*(nu*(v[i-1,j]-2*v[i,j]+v[i+1,j])*dxi**2 +
-                                    nu*(v[i,j-1]-2*v[i,j]+v[i,j+1])*dyi**2 - 
-                                    (0.25*(u[i,j-1]+u[i+1,j-1]+u[i,j]+u[i+1,j]))*
-                                    (v[i+1,j]-v[i-1,j])*0.5*dxi -
-                                    v[i,j]*(v[i,j+1]-v[i,j-1])*0.5*dyi)
-            
-            us[i,j] = u[i,j] + dt* (nu*(u[i-1,j]-2*u[i,j]+u[i+1,j])*dxi*dxi +
-                                    nu*(u[i,j-1]-2*u[i,j]+u[i,j+1])*dyi*dyi - 
-                                    u[i,j]*(u[i+1,j]-u[i-1,j])*0.5*dxi -
-                                    (0.25*(v[i-1,j]+v[i-1,j+1]+v[i,j]+v[i,j+1]))*
-                                    (u[i,j+1]-u[i,j-1])*0.5*dyi)
-            return
-        
-        if i == bds[0] - 1:
-            vs[i,j] = v[i,j] + dt*(nu*(v[i-1,j]-2*v[i,j]+v[i+1,j])*dxi**2 +
-                                    nu*(v[i,j-1]-2*v[i,j]+v[i,j+1])*dyi**2 - 
-                                    (0.25*(u[i,j-1]+u[i+1,j-1]+u[i,j]+u[i+1,j]))*
-                                    (v[i+1,j]-v[i-1,j])*0.5*dxi -
-                                    v[i,j]*(v[i,j+1]-v[i,j-1])*0.5*dyi)
-        if j == bds[2] - 1:
-            us[i,j] = u[i,j] + dt* (nu*(u[i-1,j]-2*u[i,j]+u[i+1,j])*dxi*dxi +
-                                    nu*(u[i,j-1]-2*u[i,j]+u[i,j+1])*dyi*dyi - 
-                                    u[i,j]*(u[i+1,j]-u[i-1,j])*0.5*dxi -
-                                    (0.25*(v[i-1,j]+v[i-1,j+1]+v[i,j]+v[i,j+1]))*
-                                    (u[i,j+1]-u[i,j-1])*0.5*dyi)    
-        
-        
+        us[i,j] = u[i,j] + dt*(nu*(u[i-1,j]-2*u[i,j]+u[i+1,j])*dxi*dxi +
+                                nu*(u[i,j-1]-2*u[i,j]+u[i,j+1])*dyi*dyi - 
+                                u[i,j]*(u[i+1,j]-u[i-1,j])*0.5*dxi -
+                                (0.25*(v[i-1,j]+v[i-1,j+1]+v[i,j]+v[i,j+1]))*
+                                (u[i,j+1]-u[i,j-1])*0.5*dyi)
         
     @cuda.jit()
     def computeRHS_kernel(vec,bds,R,us,vs):
         i,j = cuda.grid(2)
-        rho = vec[4]
-        dt = vec[3]
-        dxi = vec[1]
-        dyi = vec[2]
+        nu, dxi, dyi, dt, rho = vec
+        imin, imax, jmin, jmax = bds
         
-        if i < bds[0] - 1 or i > bds[1] - 1 or j < bds[2] - 1 or j > bds[3] - 1:
+        if i < imin or i > imax or j < jmin or j > jmax:
             return
         
-        # idx = (i-bds[0]+1)+(j - bds[2]+1)*(bds[3]-1)
-        n = (j-1)*(bds[1]-bds[0] + 1) + i - 1
+        n = (j-1)*imax + (i-1)
         
         R[n] = -rho/dt * ((us[i+1,j] - us[i,j]) * dxi + 
                            (vs[i,j+1] - vs[i,j]) * dyi)
@@ -606,86 +559,74 @@ class TPSolver:
     @cuda.jit()
     def calculatePressure_kernel(bds,p,pv):
         i,j = cuda.grid(2)
+        imin, imax, jmin, jmax = bds
 
-        if i < bds[0] - 1 or i > bds[1] - 1 or j < bds[2] - 1 or j > bds[3] - 1:
+        if i < imin or i > imax or j < jmin or j > jmax:
             return
         
-        n = (j-1)*(bds[1]-bds[0] + 1) + i - 1
+        n = (j-1)*imax + (i-1)
         
         p[i,j] = pv[n]
-        
-    @cuda.jit()
-    def correct_uvel_kernel(vec,bds,u,us,p):
-        i,j = cuda.grid(2)
-        
-        dxi = vec[1]
-        dt = vec[3]
-        rho = vec[4]
-        
-        if i < bds[0] or i > bds[1] - 1 or j < bds[2] - 1 or j > bds[3] - 1:
-            return
-        
-        u[i,j] = us[i,j] - dt/rho * (p[i,j] - p[i-1,j]) * dxi
-        
-    @cuda.jit()
-    def correct_vvel_kernel(vec,bds,v,vs,p):
-        i,j = cuda.grid(2)
-        
-        dyi = vec[2]
-        dt = vec[3]
-        rho = vec[4]
-        
-        if i < bds[0] - 1 or i > bds[1] - 1 or j < bds[2] or j > bds[3] - 1:
-            return
-        
-        v[i,j] = vs[i,j] - dt/rho * (p[i,j] - p[i,j-1]) * dyi   
         
     @cuda.jit()
     def correct_vel_kernel(vec,bds,u,v,us,vs,p):
         i,j = cuda.grid(2)
         
-        dxi = vec[1]
-        dyi = vec[2]
-        dt = vec[3]
-        rho = vec[4]
+        nu, dxi, dyi, dt, rho = vec
+        imin, imax, jmin, jmax = bds
         
-        # Upper bounds are the same
-        if i > bds[1] - 1 or j > bds[3] - 1:
+        if i < imin or i > imax or j < jmin or j > jmax:
             return
         
-        if i >= bds[0] and j >= bds[2]:
-            u[i,j] = us[i,j] - dt/rho * (p[i,j] - p[i-1,j]) * dxi
-            v[i,j] = vs[i,j] - dt/rho * (p[i,j] - p[i,j-1]) * dyi 
-            return
-            
-        if i == bds[0] - 1 and j > bds[2]:
-            v[i,j] = vs[i,j] - dt/rho * (p[i,j] - p[i,j-1]) * dyi  
-
-        if j == bds[2] - 1 and i > bds[0]:
-            u[i,j] = us[i,j] - dt/rho * (p[i,j] - p[i-1,j]) * dxi
-
+        u[i,j] = us[i,j] - dt/rho * (p[i,j] - p[i-1,j]) * dxi
+        v[i,j] = vs[i,j] - dt/rho * (p[i,j] - p[i,j-1]) * dyi 
         
     @cuda.jit()
-    def apply_u_bc_kernel(bds,u,u_bc):
-        i = cuda.grid(1)
+    def apply_vel_bc_kernel(bds,u,v,vel_bc):
+        i,j = cuda.grid(2)
         
-        if i < 0 or i > bds[1]:
-            return
-        
-        u[i,bds[2]-2] = u[i,bds[2]-1] - 2 * (u[i,bds[2]-1] - u_bc[0])
-        u[i,bds[3]] = u[i,bds[3]-1] - 2 * (u[i,bds[3]-1] - u_bc[1])
-        
+        imin, imax, jmin, jmax = bds
+        u_bot, u_top, v_left, v_right = vel_bc
+
+        #Tangential BCs
+        if i == imin-1:
+            v[i,j] = v[i+1,j] - 2 *(v[i+1,j] - v_left)
+        if i == imax+1:
+            v[i,j] = v[i-1,j] - 2 *(v[i-1,j] - v_right)
+        if j == jmin-1:
+            u[i,j] = u[i,j+1] - 2 *(u[i,j+1] - u_bot)
+        if j == jmax+1:
+            u[i,j] = u[i,j-1] - 2 *(u[i,j-1] - u_top)
+
+        #Perpendicular BCs
+        if i == imin:
+            u[i,j] = 0.0
+        if j == jmin:
+            v[i,j] = 0.0
+
+        #Corner BCs
+        if i == imin-1 and j  == jmax+1:
+            v[i,j] = 0.0
+        if i == imax+1 and j == jmin-1:
+            u[i,j] = 0.0
+
+
     @cuda.jit()
-    def apply_v_bc_kernel(bds,v,v_bc):
-        i = cuda.grid(1)
+    def apply_pres_bc_kernel(bds,p):
+        i,j = cuda.grid(2)
         
-        if i < 0 or i > bds[1]:
-            return
+        imin, imax, jmin, jmax = bds
+
+        if i == imin-1:
+            p[i,j] = p[i+1,j]
+        if i == imax+1:
+            p[i,j] = p[i-1,j]
+        if j == jmin-1:
+            p[i,j] = p[i,j+1]
+        if j == jmax+1:
+            p[i,j] = p[i,j-1]
         
-        v[bds[0]-2,i] = v[bds[0]-1,i] - 2 * (v[bds[0]-1,i] - v_bc[0])
-        v[bds[1],i] = v[bds[1]-1,i] - 2 * (v[bds[1]-1,i] - v_bc[1])
-        
-    def createLaplacian_kernel(self):
+    def createLaplacian_parallel(self):
         dims = self.L.shape
         TPB = 16
         vec = np.array([self.nx, self.ny, self.dxi, self.dyi], dtype=np.float32)
@@ -715,7 +656,9 @@ class TPSolver:
                         self.dt, 
                         self.rho], 
                         dtype=np.float32)
-        
+
+        vel_bc = np.array([self.u_bot, self.u_top, self.v_left, self.v_right])
+
         d_vec = cp.asarray(vec)
         d_bds = cp.asarray(bds)
         d_u = cp.asarray(self.u)
@@ -726,11 +669,7 @@ class TPSolver:
         d_p = cp.asarray(self.p)
         d_pv = cp.zeros_like(d_R)
         d_L = cp.asarray(self.L)
-        u_bc = cp.asarray(np.array([self.u_bot, self.u_top], dtype=np.float32))
-        v_bc = cp.asarray(np.array([self.v_left, self.v_right], dtype=np.float32))
-        d_u_bc = cp.asarray(u_bc)
-        d_v_bc = cp.asarray(v_bc)
-        d_v_bc = cp.asarray(v_bc)
+        d_vel_bc = cp.asarray(vel_bc)
         
         self.debug = True
         np.set_printoptions(edgeitems=30, linewidth=100000,formatter=dict(float=lambda x: "  %.3g  " % x))
@@ -742,77 +681,42 @@ class TPSolver:
                 self.printDebug('Time',self.t)
                 print('\n')   
                 
-
-            # # (1-2) u-v Predictors
-            # self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
-            # self.uMomentumPredictor()
-            # us_gpu = cp.asnumpy(d_us)
-            # self.printDebug('us - GPU',us_gpu) 
-            # np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
-            # vs_gpu = cp.asnumpy(d_vs)
-            # self.vMomentumPredictor()
-            # self.printDebug('vs - GPU',vs_gpu) 
-            # np.testing.assert_allclose(self.vs, vs_gpu, atol = 1e-3)
-                
-            # # (1) u Predictor
-            self.uMomentumPredictor()
-            self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-
-            # us_gpu = d_us.copy_to_host()
+            # # (1) momentum Predictor
+            self.MomentumPredictor()
+            self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_us,d_vs,d_vel_bc)
             us_gpu = cp.asnumpy(d_us)
             self.printDebug('us - GPU',us_gpu) 
             np.testing.assert_allclose(self.us, us_gpu, atol = 1e-3)
-            
-            # (2) v Predictor
-            self.vMomentumPredictor()
-            self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
-            # vs_gpu = d_vs.copy_to_host()
             vs_gpu = cp.asnumpy(d_vs)
             self.printDebug('vs - GPU',vs_gpu) 
             np.testing.assert_allclose(self.vs, vs_gpu, atol = 1e-3)
             
-            # (3) RHS
+            # (2) RHS
             self.computeRHS()
-            self.computeRHS_kernel[gridDims,blockDims](vec,d_bds,d_R,d_us,d_vs)
+            self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             # RHS_gpu = d_R.copy_to_host()
             RHS_gpu = cp.asnumpy(d_R)
             self.printDebug('RHS - GPU',RHS_gpu)
             np.testing.assert_allclose(self.R, RHS_gpu, atol = 1e-3)
             
-            # (3bis) Poisson Step
+            # (2bis) Poisson Step
             d_pv = cp.linalg.solve(d_L,d_R)
             
-            # (4) Calculate Pressure
+            # (3) Calculate Pressure
             self.calculatePressure()
             self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
+            self.apply_pres_bc_kernel[gridDims,blockDims](d_bds,d_p)
             # p_gpu = d_p.copy_to_host()
             p_gpu = cp.asnumpy(d_p)
             self.printDebug('Pressure - GPU',p_gpu)
             np.testing.assert_allclose(self.p, p_gpu, atol = 1e-3)
             
-            # # (5) u,v corrected
-            # self.debug = False
-            # self.correctVelocities()
-            # self.debug = True         
-            
-            # ######## THIS DOESN'T WORK!!!! NEED TO DEBUG #########
-            
-            # self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
-            # u_gpu = cp.asnumpy(d_u)
-            # v_gpu = cp.asnumpy(d_v)     
-            # self.printDebug('Corrected u (Before BC)',self.u)  
-            # self.printDebug('Corrected u (Before BC) - GPU',u_gpu)
-            # np.testing.assert_allclose(self.u, u_gpu, atol = 1e-3)
-            # self.printDebug('Corrected v (Before BC)',self.v)  
-            # self.printDebug('Corrected v (Before BC) - GPU',v_gpu)  
-            # np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3) 
-            
-            # (5) u,v corrected
+            # (4) u,v corrected
             self.debug = False
             self.correctVelocities()
             self.debug = True
-            self.correct_uvel_kernel[gridDims,blockDims](vec,bds,d_u,d_us,d_p)
-            self.correct_vvel_kernel[gridDims,blockDims](vec,bds,d_v,d_vs,d_p)
+            self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
             u_gpu = cp.asnumpy(d_u)
             v_gpu = cp.asnumpy(d_v)
             self.printDebug('Corrected u (Before BC)',self.u)  
@@ -822,10 +726,9 @@ class TPSolver:
             np.testing.assert_allclose(self.u, u_gpu, atol = 1e-3)
             np.testing.assert_allclose(self.v, v_gpu, atol = 1e-3)
             
-            # (6) Apply BC
-            self.setBoundaryConditions()
-            self.apply_u_bc_kernel[32,(self.imax+32-1)//32](bds,d_u,d_u_bc)
-            self.apply_v_bc_kernel[32,(self.jmax+32-1)//32](bds,d_v,d_v_bc)
+            # (5) Apply BC
+            self.setBoundaryConditions('corrected')
+            self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_u,d_v,d_vel_bc)
             # u_gpu = d_u.copy_to_host()
             # v_gpu = d_v.copy_to_host()
             u_gpu = cp.asnumpy(d_u)
@@ -850,6 +753,8 @@ class TPSolver:
                         self.dt, 
                         self.rho], 
                         dtype=self.__type)
+
+        vel_bc = np.array([self.u_bot, self.u_top, self.v_left, self.v_right])
         
         d_vec = cp.asarray(vec)
         d_bds = cp.asarray(bds)
@@ -861,11 +766,7 @@ class TPSolver:
         d_p = cp.asarray(self.p)
         d_pv = cp.zeros_like(d_R)
         d_L = cp.asarray(self.L)
-        u_bc = cp.asarray(np.array([self.u_bot, self.u_top], dtype=self.__type))
-        v_bc = cp.asarray(np.array([self.v_left, self.v_right], dtype=self.__type))
-        d_u_bc = cp.asarray(u_bc)
-        d_v_bc = cp.asarray(v_bc)
-        d_v_bc = cp.asarray(v_bc)
+        d_vel_bc = cp.asarray(vel_bc)
         
         gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
         blockDims = [TPB, TPB]
@@ -878,17 +779,14 @@ class TPSolver:
         start = time.time()
         while self.t <= self.tf:
             self.t += self.dt
-            self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-            self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
-            # Not properly working yet, need debug
-            # self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_us,d_vs,d_vel_bc)
             self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             d_pv = cp.linalg.solve(d_L,d_R)
             self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
-            self.correct_uvel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
-            self.correct_vvel_kernel[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
-            self.apply_u_bc_kernel[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
-            self.apply_v_bc_kernel[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
+            self.apply_pres_bc_kernel[gridDims,blockDims](d_bds,d_p)
+            self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
+            self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_u,d_v,d_vel_bc)
             if first_plot and self.flagPlot:
                 fig, axes = self.initializeFigure()
                 first_plot = False
@@ -911,6 +809,7 @@ class TPSolver:
     def solve(self):
         
         self.createComputationalMesh()
+        self.setBoundaryConditions('corrected')
         self.createLaplacian()
         
         if self.verbose:
@@ -931,12 +830,13 @@ class TPSolver:
                     print('\n')
                     self.printDebug('Time',self.t)
                     print('\n')
-                self.uMomentumPredictor()
-                self.vMomentumPredictor()
+                self.MomentumPredictor()
+                self.setBoundaryConditions('star')
                 self.computeRHS()
                 self.calculatePressure()
+                self.setBoundaryConditions('pressure')
                 self.correctVelocities()
-                self.setBoundaryConditions()
+                self.setBoundaryConditions('corrected')
                 if first_plot and self.flagPlot:
                     fig, axes = self.initializeFigure()
                     first_plot = False
@@ -966,6 +866,7 @@ class TPSolver:
             N = self.nsteps
             
         self.createComputationalMesh()
+        self.setBoundaryConditions('corrected')
         self.createLaplacian()
 
         self.debug = False
@@ -983,17 +884,21 @@ class TPSolver:
         while it <= N:
             # Update Time
             self.t += self.dt
-            self.uMomentumPredictor()
-            self.vMomentumPredictor()
+            self.MomentumPredictor()
+            self.setBoundaryConditions('star')
             self.computeRHS()
             self.calculatePressure()
+            self.setBoundaryConditions('pressure')
             self.correctVelocities()
-            self.setBoundaryConditions()
+            self.setBoundaryConditions('corrected')
             bar.next()
             it += 1
         end = time.time()
         bar.finish()
         cpu_time = float(end-start)
+        us_cpu = self.us
+        vs_cpu = self.vs
+        R_cpu = self.R
         p_cpu = self.p
         u_cpu = self.u
         v_cpu = self.v
@@ -1019,6 +924,8 @@ class TPSolver:
                         self.dt, 
                         self.rho], 
                         dtype=self.__type)
+
+        vel_bc = np.array([self.u_bot, self.u_top, self.v_left, self.v_right])
         
         d_vec = cp.asarray(vec)
         d_bds = cp.asarray(bds)
@@ -1030,35 +937,34 @@ class TPSolver:
         d_p = cp.asarray(self.p)
         d_pv = cp.zeros_like(d_R)
         d_L = cp.asarray(self.L)
-        u_bc = cp.asarray(np.array([self.u_bot, self.u_top], dtype=self.__type))
-        v_bc = cp.asarray(np.array([self.v_left, self.v_right], dtype=self.__type))
-        d_u_bc = cp.asarray(u_bc)
-        d_v_bc = cp.asarray(v_bc)
-        d_v_bc = cp.asarray(v_bc)  
+        d_vel_bc = cp.asarray(vel_bc)
+
         gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
         blockDims = [TPB, TPB]
+
+        self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_u,d_v,d_vel_bc)
         
         bar = Bar('GPU Run ',max=N)
         it = 1
         start = time.time()
         while it <= N:
             self.t += self.dt
-            # Not working?
-            #self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
-            self.uMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us)
-            self.vMomentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_vs)
+            self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
+            self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_us,d_vs,d_vel_bc)
             self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
             d_pv = cp.linalg.solve(d_L,d_R)
             self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
-            self.correct_uvel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_us,d_p)
-            self.correct_vvel_kernel[gridDims,blockDims](d_vec,d_bds,d_v,d_vs,d_p)
-            self.apply_u_bc_kernel[256,(self.imax+256-1)//256](d_bds,d_u,d_u_bc)
-            self.apply_v_bc_kernel[256,(self.jmax+256-1)//256](d_bds,d_v,d_v_bc)
+            self.apply_pres_bc_kernel[gridDims,blockDims](d_bds,d_p)
+            self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
+            self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_u,d_v,d_vel_bc)
             bar.next()
             it += 1
         end = time.time()
         bar.finish()
         gpu_time = float(end-start)
+        us_gpu = cp.asnumpy(d_us)
+        vs_gpu = cp.asnumpy(d_vs)
+        R_gpu = cp.asnumpy(d_R)
         p_gpu = cp.asnumpy(d_p)
         u_gpu = cp.asnumpy(d_u)
         v_gpu = cp.asnumpy(d_v)
@@ -1073,16 +979,24 @@ class TPSolver:
         print('u-vel Norm-L2 Value: ', round(np.linalg.norm(u_cpu - u_gpu), self.sig_figs)) 
         print('v-vel Norm-L2 Value: ', round(np.linalg.norm(v_cpu - v_gpu), self.sig_figs))
         
-        # np.testing.assert_allclose(p_cpu, p_gpu, atol = 1e-1)
-        # np.testing.assert_allclose(u_cpu, u_gpu, atol = 1e-1)
-        # np.testing.assert_allclose(v_cpu, v_gpu, atol = 1e-1)
+        np.testing.assert_allclose(us_cpu[self.imin:self.imax,self.jmin:self.jmax], 
+                                        us_gpu[self.imin:self.imax,self.jmin:self.jmax], atol = 1e-1, err_msg='us')
+        np.testing.assert_allclose(vs_cpu[self.imin:self.imax,self.jmin:self.jmax], 
+                                        vs_gpu[self.imin:self.imax,self.jmin:self.jmax], atol = 1e-1, err_msg='vs')
+        np.testing.assert_allclose(R_cpu, R_gpu, atol = 1e-1, err_msg='R')
+        np.testing.assert_allclose(p_cpu[self.imin:self.imax,self.jmin:self.jmax], 
+                                        p_gpu[self.imin:self.imax,self.jmin:self.jmax], atol = 1e-1, err_msg='p')
+        np.testing.assert_allclose(u_cpu[self.imin:self.imax,self.jmin:self.jmax], 
+                                        u_gpu[self.imin:self.imax,self.jmin:self.jmax], atol = 1e-1, err_msg='u')
+        np.testing.assert_allclose(v_cpu[self.imin:self.imax,self.jmin:self.jmax], 
+                                        v_gpu[self.imin:self.imax,self.jmin:self.jmax], atol = 1e-1, err_msg='v')
         
         
 
 def main():
     clearConsole()
     test = TPSolver(False)
-    test.enableGPU(False)
+    test.enableGPU(True)
     test.setVerbose(True)
     test.setDebug(False)
     test.setDensity(1.225)
@@ -1093,15 +1007,15 @@ def main():
     test.printTimeStatistics(True)   
     test.createComputationalMesh()
     test.setWallVelocity('top',4)
-    #test.setWallVelocity('right',4)
-    test.setWallVelocity('bottom',4)
-    #test.setWallVelocity('left',-4)
+    test.setWallVelocity('right',-4)
+    test.setWallVelocity('bottom',-4)
+    test.setWallVelocity('left',4)
     #test.setTimeStep() #This is called within the setWallVelocity method
     test.plotEveryNTimeSteps(10)
     
-    test.solve()
+    # test.solve()
     # test.debugGPUmode()
-    # test.runBenchmark(100)
+    test.runBenchmark(100)
 
 
 if __name__ == '__main__':
