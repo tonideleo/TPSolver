@@ -2,8 +2,11 @@ from re import A
 from turtle import color
 import numpy as np
 import cupy as cp
+import cupyx.scipy.sparse
+import cupyx.scipy.sparse.linalg as cpl
 from regex import W
 import scipy.sparse as sp
+import scipy.sparse.linalg as spl
 import matplotlib.pyplot as plt
 
 import time
@@ -48,7 +51,7 @@ class TPSolver:
     sig_figs = 3
     
     # Matrices
-    x = y = xm = ym = p = us = vs = R = u = v = L = []
+    x = y = xm = ym = p = us = vs = R = u = v = L = L_sp = []
     
     # Initial Velocities
     u_bot = u_top = v_left = v_right = 0
@@ -320,7 +323,9 @@ class TPSolver:
         ind = 0
         self.L[ind,:] = 0
         self.L[ind,ind] = 1
-        
+
+        self.L_sp = sp.csr_matrix(self.L)
+
         # TO DEBUG - BUILD LAPLACIAN IN SPARSE FORM
         # L2 = self.laplacian2D(self.nx*self.ny)
         # L2 = self.d2_mat_dirichlet_2d(self.nx,self.ny,self.dx,self.dy)    
@@ -364,7 +369,7 @@ class TPSolver:
             self.printDebug('RHS',self.R)   
         
     def calculatePressure(self):
-        pv = np.linalg.solve(self.L,self.R)
+        pv = spl.spsolve(self.L,self.R)
         n = 0
         for j in range(self.jmin,self.jmax+1):
             for i in range(self.imin,self.imax+1):
@@ -768,6 +773,8 @@ class TPSolver:
         d_L = cp.asarray(self.L)
         d_vel_bc = cp.asarray(vel_bc)
         
+        d_L_sp = cupyx.scipy.sparse.csr_matrix(self.L_sp)
+        
         gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
         blockDims = [TPB, TPB]
         
@@ -782,7 +789,8 @@ class TPSolver:
             self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
             self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_us,d_vs,d_vel_bc)
             self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
-            d_pv = cp.linalg.solve(d_L,d_R)
+            d_pv = cpl.spsolve(d_L_sp,d_R)
+            #d_pv = cp.linalg.solve(d_L,d_R)
             self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
             self.apply_pres_bc_kernel[gridDims,blockDims](d_bds,d_p)
             self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
@@ -939,6 +947,8 @@ class TPSolver:
         d_L = cp.asarray(self.L)
         d_vel_bc = cp.asarray(vel_bc)
 
+        d_L_sp = cupyx.scipy.sparse.csr_matrix(self.L_sp)
+
         gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
         blockDims = [TPB, TPB]
 
@@ -952,7 +962,7 @@ class TPSolver:
             self.momentumPredictor_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs)
             self.apply_vel_bc_kernel[gridDims,blockDims](d_bds,d_us,d_vs,d_vel_bc)
             self.computeRHS_kernel[gridDims,blockDims](d_vec,d_bds,d_R,d_us,d_vs)
-            d_pv = cp.linalg.solve(d_L,d_R)
+            d_pv = cpl.spsolve(d_L_sp,d_R)
             self.calculatePressure_kernel[gridDims,blockDims](d_bds,d_p,d_pv)
             self.apply_pres_bc_kernel[gridDims,blockDims](d_bds,d_p)
             self.correct_vel_kernel[gridDims,blockDims](d_vec,d_bds,d_u,d_v,d_us,d_vs,d_p)
@@ -1013,9 +1023,9 @@ def main():
     #test.setTimeStep() #This is called within the setWallVelocity method
     test.plotEveryNTimeSteps(10)
     
-    # test.solve()
+    test.solve()
     # test.debugGPUmode()
-    test.runBenchmark(100)
+    # test.runBenchmark(100)
 
 
 if __name__ == '__main__':
