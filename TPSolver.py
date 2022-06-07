@@ -1188,7 +1188,7 @@ def main():
     # test.runBenchmark(10)
     
     # iter - min - max - steps
-    test.sweepGridDimensionsBenchmark(10,10,50,4)
+    test.sweepGridDimensionsBenchmark(100,10,100,10)
 
 
 if __name__ == '__main__':
