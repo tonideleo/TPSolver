@@ -71,6 +71,15 @@ class TPSolver:
 
     def enableSparseL(self, mode):
         self.flagSparseL = mode
+        
+    def setFloatType(self, val):
+        val = int(val)
+        if val == 32:
+            self.__type = np.float32
+        elif val == 64:
+            self.__type = np.float64
+        else:
+            raise ValueError('Values can only be: 32(single)/64(double)')
 
     def setTPBX(self, val):
         self.TPBX = val
@@ -156,8 +165,9 @@ class TPSolver:
         print('Kinematics Viscosity: ', self.nu)
         print('Grid size: ', self.nx, ' x ', self.ny)
         print('Domain size: ', self.Lx, ' x ', self.Ly)
-        print('Time Step: ', self.dt)
+        print('Time Step: ', round(self.dt, self.sig_figs))
         print('Simulation Time: ', self.tf)
+        print('Float format: ', self.__type)
         self.printLine()
         print('Top Wall BC: ', self.u_top)
         print('Bottom Wall BC: ', self.u_bot)
@@ -1066,6 +1076,7 @@ def main():
     test = TPSolver(False)
     test.enableGPU(True)
     test.enableSparseL(False)
+    test.setFloatType(32)
     test.setTPBX(4)
     test.setTPBY(4)
     test.setCFL(0.75)
@@ -1086,7 +1097,7 @@ def main():
 
     # test.solve()
     # test.debugGPUmode()
-    test.runBenchmark(10)
+    test.runBenchmark(100)
 
 
 if __name__ == '__main__':
