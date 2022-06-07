@@ -1,4 +1,3 @@
-from turtle import color
 import numpy as np
 import cupy as cp
 import cupyx.scipy.sparse
