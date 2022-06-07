@@ -344,56 +344,6 @@ class TPSolver:
         if self.debug:
             np.set_printoptions(edgeitems=30, linewidth=100000,formatter=dict(float=lambda x: "  %.3g  " % x))
             self.printDebug('Laplacian Matrix',self.L)
-            
-    def createLaplacian_old(self):
-        for j in range(self.ny):
-            for i in range(self.nx):
-                self.L[i+(j)*self.nx, i+(j)*self.nx] = 2 * \
-                    self.dxi*self.dxi + 2*self.dyi*self.dyi
-                self.data_sp = np.append(
-                    self.data_sp, 2*self.dxi*self.dxi + 2*self.dyi*self.dyi)
-                self.row_sp = np.append(self.row_sp, i+(j)*self.nx)
-                self.col_sp = np.append(self.col_sp, i+(j)*self.nx)
-                end_ind = len(self.data_sp) - 1
-                for ii in range(i-1, i+2, 2):
-                    if ii+1 > 0 and ii+1 <= self.nx:
-                        # print(i,j,ii)
-                        # print(i+(j)*self.nx,ii+(j)*self.nx)
-                        self.L[i+(j)*self.nx, ii+(j)*self.nx] = - \
-                            self.dxi*self.dxi
-                        self.data_sp = np.append(
-                            self.data_sp, -self.dxi*self.dxi)
-                        self.row_sp = np.append(self.row_sp, i+(j)*self.nx)
-                        self.col_sp = np.append(self.col_sp, ii+(j)*self.nx)
-                    else:
-                        self.L[i+(j)*self.nx, i+(j)*self.nx] += - \
-                            self.dxi*self.dxi
-                        self.data_sp[end_ind] += -self.dxi*self.dxi
-                for jj in range(j-1, j+2, 2):
-                    if jj+1 > 0 and jj+1 <= self.ny:
-                        # print(i,j,jj)
-                        # print(i+(j)*self.nx,i+(jj)*self.nx)
-                        self.L[i+(j)*self.nx, i+(jj)*self.nx] = - \
-                            self.dyi*self.dyi
-                        self.data_sp = np.append(
-                            self.data_sp, -self.dxi*self.dxi)
-                        self.row_sp = np.append(self.row_sp, i+(j)*self.nx)
-                        self.col_sp = np.append(self.col_sp, i+(jj)*self.nx)
-                    else:
-                        self.L[i+(j)*self.nx, i+(j)*self.nx] += - \
-                            self.dyi*self.dyi
-                        self.data_sp[end_ind] += -self.dyi*self.dyi
-        ind = self.imax//2+(self.jmax//2)*self.nx
-        self.L[ind, :] = 0
-        self.L[ind, ind] = 1
-
-        self.L_sp = sp.csr_matrix((self.data_sp, (self.row_sp, self.col_sp)), shape=(
-            self.nx*self.ny, self.nx*self.ny))
-
-        if self.debug:
-            np.set_printoptions(edgeitems=30, linewidth=100000, formatter=dict(
-                float=lambda x: "  %.3g  " % x))
-            self.printDebug('Laplacian Matrix', self.L)
 
     def MomentumPredictor(self):
         for j in range(self.jmin, self.jmax+1):
