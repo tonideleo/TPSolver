@@ -323,8 +323,29 @@ class TPSolver:
         self.col_sp = np.array(self.col_sp)
         self.L_sp = sp.csr_matrix((self.data_sp, (self.row_sp, self.col_sp)), shape=(
             self.nx*self.ny, self.nx*self.ny),dtype=self.__type)
-
+        
     def createLaplacian(self):
+        for j in range(self.ny):
+            for i in range(self.nx):
+                self.L[i+(j)*self.nx, i+(j)*self.nx] = 2*self.dxi*self.dxi + 2*self.dyi*self.dyi
+                for ii in range(i-1,i+2,2):
+                    if ii +1> 0 and ii +1<= self.nx:
+                        self.L[i+(j)*self.nx,ii+(j)*self.nx] = -self.dxi*self.dxi
+                    else:
+                        self.L[i+(j)*self.nx,i+(j)*self.nx] += -self.dxi*self.dxi
+                for jj in range(j-1,j+2,2):
+                    if jj +1> 0 and jj +1<= self.ny:
+                        self.L[i+(j)*self.nx,i+(jj)*self.nx] = -self.dyi*self.dyi
+                    else:
+                        self.L[i+(j)*self.nx,i+(j)*self.nx] += -self.dyi*self.dyi
+        self.L[0,:] = 0
+        self.L[0,0] = 1
+        
+        if self.debug:
+            np.set_printoptions(edgeitems=30, linewidth=100000,formatter=dict(float=lambda x: "  %.3g  " % x))
+            self.printDebug('Laplacian Matrix',self.L)
+            
+    def createLaplacian_old(self):
         for j in range(self.ny):
             for i in range(self.nx):
                 self.L[i+(j)*self.nx, i+(j)*self.nx] = 2 * \
@@ -1163,12 +1184,12 @@ def main():
     test.plotEveryNTimeSteps(10)
     test.savePlots(True)
 
-    # test.solve()
+    test.solve()
     # test.debugGPUmode()
     # est.runBenchmark(10)
     
     # iter - min - max - steps
-    test.sweepGridDimensionsBenchmark(10,10,30,4)
+    # test.sweepGridDimensionsBenchmark(10,10,30,4)
 
 
 if __name__ == '__main__':
