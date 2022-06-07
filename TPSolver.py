@@ -35,12 +35,15 @@ class TPSolver:
     imin = imax = jmin = jmax = 0
 
     # Miscellaneous
-    __type = np.float64
+    __type = np.float32
     flagGPU = False
     flagSparseL = True
     linelenght = 70
     plot_frequency = 100
     sig_figs = 3
+    TPBX = 8
+    TPBY = 8
+    CFL = 0.75
 
     # Matrices
     x = y = xm = ym = p = us = vs = R = u = v = L = L_sp = []
@@ -69,6 +72,15 @@ class TPSolver:
 
     def enableSparseL(self, mode):
         self.flagSparseL = mode
+
+    def setTPBX(self, val):
+        self.TPBX = val
+
+    def setTPBY(self, val):
+        self.TPBY = val
+
+    def setCFL(self, val):
+        self.CFL = val
 
     def setVerbose(self, val):
         self.verbose = val
@@ -652,10 +664,8 @@ class TPSolver:
         else:
             self.createLaplacian()
 
-        TPBX = 4
-        TPBY = 4
-        gridDims = [(self.imax+2+TPBX-1)//TPBX, (self.jmax+2+TPBY-1)//TPBY]
-        blockDims = [TPBX, TPBY]
+        gridDims = [(self.imax+2+self.TPBX-1)//self.TPBX, (self.jmax+2+self.TPBY-1)//self.TPBY]
+        blockDims = [self.TPBX, self.TPBY]
 
         # Send some quantities over
         bds = np.array([self.imin, self.imax, self.jmin,
@@ -772,10 +782,8 @@ class TPSolver:
 
     def solve_parallel(self):
         # cuda.profile_start()
-        TPBX = 4
-        TPBY = 4
-        gridDims = [(self.imax+2+TPBX-1)//TPBX, (self.jmax+2+TPBY-1)//TPBY]
-        blockDims = [TPBX, TPBY]
+        gridDims = [(self.imax+2+self.TPBX-1)//self.TPBX, (self.jmax+2+self.TPBY-1)//self.TPBY]
+        blockDims = [self.TPBX, self.TPBY]
 
         bds = np.array([self.imin, self.imax, self.jmin,
                        self.jmax], dtype=np.uint32)
@@ -954,10 +962,8 @@ class TPSolver:
         self.setBoundaryConditions('corrected')
 
         # Run GPU
-        TPBX = 4
-        TPBY = 4
-        gridDims = [(self.imax+2+TPBX-1)//TPBX, (self.jmax+2+TPBY-1)//TPBY]
-        blockDims = [TPBX, TPBY]
+        gridDims = [(self.imax+2+self.TPBX-1)//self.TPBX, (self.jmax+2+self.TPBY-1)//self.TPBY]
+        blockDims = [self.TPBX, self.TPBY]
 
         bds = np.array([self.imin, self.imax, self.jmin,
                        self.jmax], dtype=np.uint32)
@@ -1055,24 +1061,27 @@ def main():
     test = TPSolver(False)
     test.enableGPU(True)
     test.enableSparseL(False)
+    test.setTPBX(8)
+    test.setTPBY(4)
+    test.setCFL(0.75)
     test.setVerbose(True)
     test.setDebug(False)
     test.setDensity(1.225)
-    test.setKinematicViscosity(0.05)
-    test.setGridPoints(100,100)
+    test.setKinematicViscosity(0.005)
+    test.setGridPoints(50,50)
     test.setDomainSize(1, 1)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)
     test.createComputationalMesh()
     test.setWallVelocity('top', 4)
     #test.setWallVelocity('right', -4)
-    #test.setWallVelocity('bottom', -4)
-    #test.setWallVelocity('left', 4)
-    test.plotEveryNTimeSteps(10)
+    test.setWallVelocity('bottom', -4)
+    #test.setWallVelocity('left', -4)
+    test.plotEveryNTimeSteps(100)
 
     test.solve()
     # test.debugGPUmode()
-    # test.runBenchmark(10)
+    # test.runBenchmark(100)
 
 
 if __name__ == '__main__':
