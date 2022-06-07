@@ -338,8 +338,9 @@ class TPSolver:
                         self.L[i+(j)*self.nx,i+(jj)*self.nx] = -self.dyi*self.dyi
                     else:
                         self.L[i+(j)*self.nx,i+(j)*self.nx] += -self.dyi*self.dyi
-        self.L[0,:] = 0
-        self.L[0,0] = 1
+        ind = self.imax//2+(self.jmax//2)*self.nx
+        self.L[ind,:] = 0
+        self.L[ind,ind] = 1
         
         if self.debug:
             np.set_printoptions(edgeitems=30, linewidth=100000,formatter=dict(float=lambda x: "  %.3g  " % x))
@@ -1172,7 +1173,7 @@ def main():
     test.setDebug(False)
     test.setDensity(1.225)
     test.setKinematicViscosity(0.005)
-    test.setGridPoints(50,50)
+    test.setGridPoints(51,51)
     test.setDomainSize(1, 1)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)
@@ -1184,9 +1185,9 @@ def main():
     test.plotEveryNTimeSteps(10)
     test.savePlots(True)
 
-    test.solve()
+    # test.solve()
     # test.debugGPUmode()
-    # est.runBenchmark(10)
+    test.runBenchmark(10)
     
     # iter - min - max - steps
     # test.sweepGridDimensionsBenchmark(10,10,30,4)
