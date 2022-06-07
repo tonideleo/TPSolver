@@ -228,6 +228,8 @@ class TPSolver:
             self.printDebug('Simulation Time', self.tf)
 
     def calculateNumberOfTimeSteps(self):
+        if self.dt == 0:
+            self.setTimeStep()
         self.nsteps = int(self.tf/self.dt)
         if self.debug:
             self.printDebug('Total Number of Steps', self.nsteps)
@@ -245,8 +247,6 @@ class TPSolver:
             (self.x[self.imin:self.imax+1] + self.x[self.imin+1:self.imax+2])
         self.ym[self.jmin:self.jmax+1] = 0.5 * \
             (self.y[self.jmin:self.jmax+1] + self.y[self.jmin+1:self.jmax+2])
-
-        self.calculateNumberOfTimeSteps()
 
         # Preallocate Matrices
         self.p = np.zeros((self.imax+2, self.jmax+2), dtype=self.__type)
@@ -266,6 +266,8 @@ class TPSolver:
         self.dy = self.y[self.jmin+1] - self.y[self.jmin]
         self.dxi = 1/self.dx
         self.dyi = 1/self.dy
+        
+        self.calculateNumberOfTimeSteps()
 
     def setWallVelocity(self, loc, val):
         loc = str.lower(loc)
@@ -1174,7 +1176,6 @@ def main():
     test.setDomainSize(1, 1)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)
-    test.createComputationalMesh()
     test.setWallVelocity('top', 4)
     #test.setWallVelocity('right', -4)
     test.setWallVelocity('bottom', -4)
@@ -1182,12 +1183,12 @@ def main():
     test.plotEveryNTimeSteps(10)
     test.savePlots(True)
 
-    test.solve()
+    # test.solve()
     # test.debugGPUmode()
-    test.runBenchmark(10)
+    # test.runBenchmark(10)
     
     # iter - min - max - steps
-    # test.sweepGridDimensionsBenchmark(10,10,30,4)
+    test.sweepGridDimensionsBenchmark(10,10,50,4)
 
 
 if __name__ == '__main__':
