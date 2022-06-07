@@ -1107,6 +1107,7 @@ class TPSolver:
         warnings.filterwarnings('ignore')
         self.verbose = False
         self.flagPlot = False
+        self.flag_saveplot = False
         gridSize = np.linspace(min, max, steps, dtype=np.uint32)
         cputimes = np.zeros_like(gridSize, dtype=np.float64)
         gputimes = np.zeros_like(gridSize, dtype=np.float64)
@@ -1119,14 +1120,14 @@ class TPSolver:
         for i,size in enumerate(gridSize):
             self.setGridPoints(size,size)
             self.createComputationalMesh()
+            print('Grid size: ', self.nx, ' x ', self.ny)
             cputimes[i], gputimes[i], passtests[i] = self.runBenchmark(Niter)
             self.createComputationalMesh()
-            print('Grid size: ', self.nx, ' x ', self.ny)
-            print('Speed-up Factor: ', cputimes[i]/gputimes[i])
+            print('Speed-up Factor: ', round(cputimes[i]/gputimes[i], self.sig_figs + 2))
             if passtests[i]:
-                print('Pass Assert Test: \033[42mpass\033[0m!')
+                print('Pass Assert Test: \033[32mpass\033[0m!')
             else:
-                print('Pass Assert Test: \033[41mfail\033[0m!')
+                print('Pass Assert Test: \033[31mfail\033[0m!')
             self.printLine()
         warnings.filterwarnings('default')
         plt.plot(gridSize,cputimes/gputimes,'-o')
@@ -1164,10 +1165,10 @@ def main():
 
     # test.solve()
     # test.debugGPUmode()
-    test.runBenchmark(10)
+    # est.runBenchmark(10)
     
     # iter - min - max - steps
-    # test.sweepGridDimensionsBenchmark(10,10,50,4)
+    test.sweepGridDimensionsBenchmark(10,10,30,4)
 
 
 if __name__ == '__main__':
