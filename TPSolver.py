@@ -1,11 +1,8 @@
-import warnings
-from re import A
 from turtle import color
 import numpy as np
 import cupy as cp
 import cupyx.scipy.sparse
 import cupyx.scipy.sparse.linalg as cpl
-from regex import W
 import scipy.sparse as sp
 import scipy.sparse.linalg as spl
 import matplotlib.pyplot as plt
@@ -16,14 +13,8 @@ from progress.bar import Bar  # (pip install progress)
 from cpuinfo import get_cpu_info
 import os
 
-
 def clearConsole(): return os.system(
     'cls' if os.name in ('nt', 'dos') else 'clear')
-
-
-# warnings.filterwarnings("error")
-# warnings.filterwarnings('ignore')
-
 
 class TPSolver:
     nu = 0.001      # Kinematic Viscosity
@@ -266,17 +257,19 @@ class TPSolver:
         self.setTimeStep()
 
     def createLaplacianSparse(self):
-        #self.data_sp = np.append(self.data_sp, 1.0)
-        #self.row_sp = np.append(self.row_sp, 0)
-        #self.col_sp = np.append(self.col_sp, 0)
+        ind = self.imax//2+(self.jmax//2)*self.nx
+        self.data_sp.append(1.0)
+        self.row_sp.append(ind)
+        self.col_sp.append(ind)
         for j in range(self.ny):
             for i in range(self.nx):
-                data = 2*self.dxi*self.dxi + 2*self.dyi*self.dyi
-                self.data_sp.append(data)
                 row = i+(j)*self.nx
+                if row == ind: continue
                 self.row_sp.append(row)
                 col = i+(j)*self.nx
                 self.col_sp.append(col)
+                data = 2*self.dxi*self.dxi + 2*self.dyi*self.dyi
+                self.data_sp.append(data)
                 end_ind = len(self.data_sp) - 1
                 for ii in range(i-1, i+2, 2):
                     if ii+1 > 0 and ii+1 <= self.nx:
@@ -301,7 +294,7 @@ class TPSolver:
         self.row_sp = np.array(self.row_sp)
         self.col_sp = np.array(self.col_sp)
         self.L_sp = sp.csr_matrix((self.data_sp, (self.row_sp, self.col_sp)), shape=(
-            self.nx*self.ny, self.nx*self.ny))
+            self.nx*self.ny, self.nx*self.ny),dtype=self.__type)
 
     def createLaplacian(self):
         for j in range(self.ny):
@@ -341,7 +334,7 @@ class TPSolver:
                         self.L[i+(j)*self.nx, i+(j)*self.nx] += - \
                             self.dyi*self.dyi
                         self.data_sp[end_ind] += -self.dyi*self.dyi
-        ind = 0
+        ind = self.imax//2+(self.jmax//2)*self.nx
         self.L[ind, :] = 0
         self.L[ind, ind] = 1
 
@@ -411,17 +404,18 @@ class TPSolver:
     def setBoundaryConditions(self, val):
         val = str.lower(val)
         if val == "corrected":
-            self.u[:, self.jmin-1] = self.u[:, self.jmin] - \
-                2*(self.u[:, self.jmin] - self.u_bot)
-            self.u[:, self.jmax+1] = self.u[:, self.jmax] - \
-                2*(self.u[:, self.jmax] - self.u_top)
-            self.v[self.imin-1, :] = self.v[self.imin, :] - \
-                2 * (self.v[self.imin, :] - self.v_left)
-            self.v[self.imax+1, :] = self.v[self.imax, :] - \
-                2 * (self.v[self.imax, :] - self.v_right)
+            self.u[:, self.jmin-1] = (self.u[:, self.jmin] -
+                2*(self.u[:, self.jmin] - self.u_bot))
+            self.u[:, self.jmax+1] = (self.u[:, self.jmax] -
+                2*(self.u[:, self.jmax] - self.u_top))
+            self.v[self.imin-1, :] = (self.v[self.imin, :] -
+                2 * (self.v[self.imin, :] - self.v_left))
+            self.v[self.imax+1, :] = (self.v[self.imax, :] -
+                2 * (self.v[self.imax, :] - self.v_right))
             # Set corners to zero
             self.v[0, self.jmax+1] = 0.0
-            self.u[self.imax+1, 0] = 0.0
+            self.u[self.imax+1,0] = 0.0
+            
             # Set wall velocity to zero
             self.u[1, :] = 0.0
             self.v[:, 1] = 0.0
@@ -431,17 +425,17 @@ class TPSolver:
             self.p[self.imin-1, :] = self.p[self.imin, :]
             self.p[self.imax+1, :] = self.p[self.imax, :]
         elif val == "star":
-            self.us[:, self.jmin-1] = self.us[:, self.jmin] - \
-                2*(self.us[:, self.jmin] - self.u_bot)
-            self.us[:, self.jmax+1] = self.us[:, self.jmax] - \
-                2*(self.us[:, self.jmax] - self.u_top)
-            self.vs[self.imin-1, :] = self.vs[self.imin, :] - \
-                2 * (self.vs[self.imin, :] - self.v_left)
-            self.vs[self.imax+1, :] = self.vs[self.imax, :] - \
-                2 * (self.vs[self.imax, :] - self.v_right)
+            self.us[:, self.jmin-1] = (self.us[:, self.jmin] -
+                2*(self.us[:, self.jmin] - self.u_bot))
+            self.us[:, self.jmax+1] = (self.us[:, self.jmax] -
+                2*(self.us[:, self.jmax] - self.u_top))
+            self.vs[self.imin-1, :] = (self.vs[self.imin, :] -
+                2 * (self.vs[self.imin, :] - self.v_left))
+            self.vs[self.imax+1, :] = (self.vs[self.imax, :] -
+                2 * (self.vs[self.imax, :] - self.v_right))
             # Set corners to zero
             self.vs[0, self.jmax+1] = 0.0
-            self.us[self.imax+1, 0] = 0.0
+            self.us[self.imax+1,0] = 0.0
             # Set wall velocity to zero
             self.us[1, :] = 0.0
             self.vs[:, 1] = 0.0
@@ -539,32 +533,6 @@ class TPSolver:
         return figure, axes
 
     @cuda.jit()
-    def createLaplacian_kernel(vec, L):
-        i, j = cuda.grid(2)
-        dims = L.shape
-        nx, ny, dxi, dyi = vec
-
-        if i >= dims[0] or j >= dims[1]:
-            return
-
-        L[i+(j)*nx, i+(j)*nx] = 2*dxi*dxi + 2*dyi*dyi
-        for ii in range(i-1, i+2, 2):
-            if ii + 1 > 0 and ii + 1 <= nx:
-                L[i+(j)*nx, ii+(j)*nx] = -dxi*dxi
-            else:
-                L[i+(j)*nx, i+(j)*nx] += -dxi*dxi
-        for jj in range(j-1, j+2, 2):
-            if jj + 1 > 0 and jj + 1 <= ny:
-                L[i+(j)*nx, i+(jj)*nx] = -dyi*dyi
-            else:
-                L[i+(j)*nx, i+(j)*nx] += -dyi*dyi
-
-        if i == 0 and j == 0:
-            L[i, j] = 1
-        elif i == 0 and j != 0:
-            L[i, j] = 0
-
-    @cuda.jit()
     def momentumPredictor_kernel(vec, bds, u, v, us, vs):
         i, j = cuda.grid(2)
 
@@ -632,7 +600,10 @@ class TPSolver:
         imin, imax, jmin, jmax = bds
         u_bot, u_top, v_left, v_right = vel_bc
 
-        # Tangential BCs
+        if i > imax+1 or j > jmax+1:
+           return
+
+        #Tangential BCs
         if i == imin-1:
             v[i, j] = v[i+1, j] - 2 * (v[i+1, j] - v_left)
         if i == imax+1:
@@ -660,6 +631,9 @@ class TPSolver:
 
         imin, imax, jmin, jmax = bds
 
+        if i > imax+1 or j > jmax+1:
+            return
+
         if i == imin-1:
             p[i, j] = p[i+1, j]
         if i == imax+1:
@@ -669,143 +643,21 @@ class TPSolver:
         if j == jmax+1:
             p[i, j] = p[i, j-1]
 
-    def createLaplacian_parallel(self):
-        dims = self.L.shape
-        TPB = 16
-        vec = np.array([self.nx, self.ny, self.dxi,
-                       self.dyi], dtype=np.float32)
-        d_vec = cuda.to_device(vec)
-        d_L = cuda.to_device(self.L)
-        gridDims = [(dims[0]+TPB-1)//TPB, (dims[1]+TPB-1)//TPB]
-        blockDims = [TPB, TPB]
-        self.createLaplacian_kernel[gridDims, blockDims](d_vec, d_L)
-
-        return d_L.copy_to_host()
-
     def debugGPUmode(self):
 
         self.createComputationalMesh()
+        self.setBoundaryConditions('corrected')
         if self.flagSparseL:
             self.createLaplacianSparse()
         else:
             self.createLaplacian()
 
-        TPB = 4
-        gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
-        blockDims = [TPB, TPB]
+        TPBX = 4
+        TPBY = 4
+        gridDims = [(self.imax+2+TPBX-1)//TPBX, (self.jmax+2+TPBY-1)//TPBY]
+        blockDims = [TPBX, TPBY]
 
         # Send some quantities over
-        bds = np.array([self.imin, self.imax, self.jmin,
-                       self.jmax], dtype=np.uint32)
-
-        vec = np.array([self.nu,
-                        self.dxi,
-                        self.dyi,
-                        self.dt,
-                        self.rho],
-                       dtype=np.float32)
-
-        vel_bc = np.array([self.u_bot, self.u_top, self.v_left, self.v_right])
-
-        d_vec = cp.asarray(vec)
-        d_bds = cp.asarray(bds)
-        d_u = cp.asarray(self.u)
-        d_v = cp.asarray(self.v)
-        d_us = cp.asarray(self.us)
-        d_vs = cp.asarray(self.vs)
-        d_R = cp.asarray(self.R)
-        d_p = cp.asarray(self.p)
-        d_pv = cp.zeros_like(d_R)
-        if self.flagSparseL:
-            d_L_sp = cupyx.scipy.sparse.csr_matrix(self.L_sp)
-        else:
-            d_L = cp.asarray(self.L)
-        d_vel_bc = cp.asarray(vel_bc)
-
-        self.debug = True
-        np.set_printoptions(edgeitems=30, linewidth=100000,
-                            formatter=dict(float=lambda x: "  %.3g  " % x))
-
-        while self.t <= self.tf:
-            self.t += self.dt
-            if self.debug:
-                print('\n')
-                self.printDebug('Time', self.t)
-                print('\n')
-
-            # # (1) momentum Predictor
-            self.MomentumPredictor()
-            self.momentumPredictor_kernel[gridDims, blockDims](
-                d_vec, d_bds, d_u, d_v, d_us, d_vs)
-            self.apply_vel_bc_kernel[gridDims, blockDims](
-                d_bds, d_us, d_vs, d_vel_bc)
-            us_gpu = cp.asnumpy(d_us)
-            self.printDebug('us - GPU', us_gpu)
-            np.testing.assert_allclose(self.us, us_gpu, atol=1e-3)
-            vs_gpu = cp.asnumpy(d_vs)
-            self.printDebug('vs - GPU', vs_gpu)
-            np.testing.assert_allclose(self.vs, vs_gpu, atol=1e-3)
-
-            # (2) RHS
-            self.computeRHS()
-            self.computeRHS_kernel[gridDims, blockDims](
-                d_vec, d_bds, d_R, d_us, d_vs)
-            # RHS_gpu = d_R.copy_to_host()
-            RHS_gpu = cp.asnumpy(d_R)
-            self.printDebug('RHS - GPU', RHS_gpu)
-            np.testing.assert_allclose(self.R, RHS_gpu, atol=1e-3)
-
-            # (2bis) Poisson Step
-            if self.flagSparseL:
-                d_pv = cpl.spsolve(d_L_sp, d_R)
-            else:
-                d_pv = cp.linalg.solve(d_L, d_R)
-
-            # (3) Calculate Pressure
-            self.calculatePressure()
-            self.calculatePressure_kernel[gridDims, blockDims](
-                d_bds, d_p, d_pv)
-            self.apply_pres_bc_kernel[gridDims, blockDims](d_bds, d_p)
-            # p_gpu = d_p.copy_to_host()
-            p_gpu = cp.asnumpy(d_p)
-            self.printDebug('Pressure - GPU', p_gpu)
-            np.testing.assert_allclose(self.p, p_gpu, atol=1e-3)
-
-            # (4) u,v corrected
-            self.debug = False
-            self.correctVelocities()
-            self.debug = True
-            self.correct_vel_kernel[gridDims, blockDims](
-                d_vec, d_bds, d_u, d_v, d_us, d_vs, d_p)
-            u_gpu = cp.asnumpy(d_u)
-            v_gpu = cp.asnumpy(d_v)
-            self.printDebug('Corrected u (Before BC)', self.u)
-            self.printDebug('Corrected u (Before BC) - GPU', u_gpu)
-            self.printDebug('Corrected v (Before BC)', self.v)
-            self.printDebug('Corrected v (Before BC) - GPU', v_gpu)
-            np.testing.assert_allclose(self.u, u_gpu, atol=1e-3)
-            np.testing.assert_allclose(self.v, v_gpu, atol=1e-3)
-
-            # (5) Apply BC
-            self.setBoundaryConditions('corrected')
-            self.apply_vel_bc_kernel[gridDims, blockDims](
-                d_bds, d_u, d_v, d_vel_bc)
-            # u_gpu = d_u.copy_to_host()
-            # v_gpu = d_v.copy_to_host()
-            u_gpu = cp.asnumpy(d_u)
-            v_gpu = cp.asnumpy(d_v)
-            self.printDebug('Corrected u (After BC) - GPU', u_gpu)
-            self.printDebug('Corrected v (After BC) - GPU', v_gpu)
-            np.testing.assert_allclose(self.u, u_gpu, atol=1e-3)
-            np.testing.assert_allclose(self.v, v_gpu, atol=1e-3)
-
-    def checkNaN(self):
-        pass
-
-    def solve_parallel(self):
-        # cuda.profile_start()
-        TPB = 4
-
         bds = np.array([self.imin, self.imax, self.jmin,
                        self.jmax], dtype=np.uint32)
 
@@ -833,10 +685,124 @@ class TPSolver:
             d_L = cp.asarray(self.L)
         d_vel_bc = cp.asarray(vel_bc)
 
-        d_L_sp = cupyx.scipy.sparse.csr_matrix(self.L_sp)
+        self.debug = True
+        np.set_printoptions(edgeitems=30, linewidth=100000,
+                            formatter=dict(float=lambda x: "  %.3g  " % x))
 
-        gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
-        blockDims = [TPB, TPB]
+        self.debug = False
+        while self.t <= self.tf:
+            self.t += self.dt
+            if self.debug:
+                print('\n')
+                self.printDebug('Time', self.t)
+                print('\n')
+
+            # # (1) momentum Predictor
+            self.MomentumPredictor()
+            self.setBoundaryConditions('star')
+            self.momentumPredictor_kernel[gridDims, blockDims](
+                d_vec, d_bds, d_u, d_v, d_us, d_vs)
+            self.apply_vel_bc_kernel[gridDims, blockDims](
+                d_bds, d_us, d_vs, d_vel_bc)
+            us_gpu = cp.asnumpy(d_us)
+            self.printDebug('us - CPU', self.us)
+            self.printDebug('us - GPU', us_gpu)
+            np.testing.assert_allclose(self.us, us_gpu, atol=1e-3, err_msg='us')
+            vs_gpu = cp.asnumpy(d_vs)
+            self.printDebug('vs - GPU', vs_gpu)
+            np.testing.assert_allclose(self.vs, vs_gpu, atol=1e-3, err_msg='vs')
+
+            # (2) RHS
+            self.computeRHS()
+            self.computeRHS_kernel[gridDims, blockDims](
+                d_vec, d_bds, d_R, d_us, d_vs)
+            # RHS_gpu = d_R.copy_to_host()
+            RHS_gpu = cp.asnumpy(d_R)
+            self.printDebug('RHS - GPU', RHS_gpu)
+            np.testing.assert_allclose(self.R, RHS_gpu, atol=1e-3, err_msg='RHS')
+
+            # (2bis) Poisson Step
+            if self.flagSparseL:
+                d_pv = cpl.spsolve(d_L_sp, d_R)
+            else:
+                d_pv = cp.linalg.solve(d_L, d_R)
+
+            # (3) Calculate Pressure
+            self.calculatePressure()
+            self.setBoundaryConditions('pressure')
+            self.calculatePressure_kernel[gridDims, blockDims](
+                d_bds, d_p, d_pv)
+            self.apply_pres_bc_kernel[gridDims, blockDims](d_bds, d_p)
+            # p_gpu = d_p.copy_to_host()
+            p_gpu = cp.asnumpy(d_p)
+            self.printDebug('Pressure - CPU', self.p)
+            self.printDebug('Pressure - GPU', p_gpu)
+            np.testing.assert_allclose(self.p, p_gpu, atol=1e-3, err_msg='P')
+
+            # (4) u,v corrected
+            self.debug = False
+            self.correctVelocities()
+            self.debug = True
+            self.correct_vel_kernel[gridDims, blockDims](
+                d_vec, d_bds, d_u, d_v, d_us, d_vs, d_p)
+            u_gpu = cp.asnumpy(d_u)
+            v_gpu = cp.asnumpy(d_v)
+            self.printDebug('Corrected u (Before BC)', self.u)
+            self.printDebug('Corrected u (Before BC) - GPU', u_gpu)
+            self.printDebug('Corrected v (Before BC)', self.v)
+            self.printDebug('Corrected v (Before BC) - GPU', v_gpu)
+            np.testing.assert_allclose(self.u, u_gpu, atol=1e-3, err_msg='u')
+            np.testing.assert_allclose(self.v, v_gpu, atol=1e-3, err_msg='v')
+
+            # (5) Apply BC
+            self.setBoundaryConditions('corrected')
+            self.apply_vel_bc_kernel[gridDims, blockDims](
+                d_bds, d_u, d_v, d_vel_bc)
+            # u_gpu = d_u.copy_to_host()
+            # v_gpu = d_v.copy_to_host()
+            u_gpu = cp.asnumpy(d_u)
+            v_gpu = cp.asnumpy(d_v)
+            self.printDebug('Corrected u (After BC) - GPU', u_gpu)
+            self.printDebug('Corrected v (After BC) - GPU', v_gpu)
+            np.testing.assert_allclose(self.u, u_gpu, atol=1e-3, err_msg='u')
+            np.testing.assert_allclose(self.v, v_gpu, atol=1e-3, err_msg='v')
+
+    def checkNaN(self):
+        pass
+
+    def solve_parallel(self):
+        # cuda.profile_start()
+        TPBX = 4
+        TPBY = 4
+        gridDims = [(self.imax+2+TPBX-1)//TPBX, (self.jmax+2+TPBY-1)//TPBY]
+        blockDims = [TPBX, TPBY]
+
+        bds = np.array([self.imin, self.imax, self.jmin,
+                       self.jmax], dtype=np.uint32)
+
+        vec = np.array([self.nu,
+                        self.dxi,
+                        self.dyi,
+                        self.dt,
+                        self.rho],
+                       dtype=self.__type)
+
+        vel_bc = np.array([self.u_bot, self.u_top, self.v_left, self.v_right])
+
+        d_vec = cp.asarray(vec)
+        d_bds = cp.asarray(bds)
+        d_u = cp.asarray(self.u)
+        d_v = cp.asarray(self.v)
+        d_us = cp.asarray(self.us)
+        d_vs = cp.asarray(self.vs)
+        d_R = cp.asarray(self.R)
+        d_p = cp.asarray(self.p)
+        d_pv = cp.zeros_like(d_R)
+        if self.flagSparseL:
+            d_L_sp = cupyx.scipy.sparse.csr_matrix(self.L_sp)
+        else:
+            d_L = cp.asarray(self.L)
+        d_vel_bc = cp.asarray(vel_bc)
 
         # stream1 = cuda.stream()
         # stream2 = cuda.stream()
@@ -985,13 +951,13 @@ class TPSolver:
 
         # Reset Values
         self.createComputationalMesh()
-        if self.flagSparseL:
-            self.createLaplacianSparse()
-        else:
-            self.createLaplacian()
+        self.setBoundaryConditions('corrected')
 
         # Run GPU
-        TPB = 4
+        TPBX = 4
+        TPBY = 4
+        gridDims = [(self.imax+2+TPBX-1)//TPBX, (self.jmax+2+TPBY-1)//TPBY]
+        blockDims = [TPBX, TPBY]
 
         bds = np.array([self.imin, self.imax, self.jmin,
                        self.jmax], dtype=np.uint32)
@@ -1019,9 +985,6 @@ class TPSolver:
         else:
             d_L = cp.asarray(self.L)
         d_vel_bc = cp.asarray(vel_bc)
-
-        gridDims = [(self.imax+TPB-1)//TPB, (self.jmax+TPB-1)//TPB]
-        blockDims = [TPB, TPB]
 
         self.apply_vel_bc_kernel[gridDims, blockDims](
             d_bds, d_u, d_v, d_vel_bc)
@@ -1090,27 +1053,26 @@ class TPSolver:
 def main():
     clearConsole()
     test = TPSolver(False)
-    test.enableGPU(False)
-    test.enableSparseL(True)
+    test.enableGPU(True)
+    test.enableSparseL(False)
     test.setVerbose(True)
     test.setDebug(False)
     test.setDensity(1.225)
-    test.setKinematicViscosity(0.005)
-    test.setGridPoints(500,500)
+    test.setKinematicViscosity(0.05)
+    test.setGridPoints(100,100)
     test.setDomainSize(1, 1)
     test.setSimulationTime(20)
     test.printTimeStatistics(True)
     test.createComputationalMesh()
     test.setWallVelocity('top', 4)
-    test.setWallVelocity('right', -4)
-    test.setWallVelocity('bottom', -4)
-    test.setWallVelocity('left', 4)
-    # test.setTimeStep() #This is called within the setWallVelocity method
+    #test.setWallVelocity('right', -4)
+    #test.setWallVelocity('bottom', -4)
+    #test.setWallVelocity('left', 4)
     test.plotEveryNTimeSteps(10)
 
     test.solve()
     # test.debugGPUmode()
-    # test.runBenchmark(100)
+    # test.runBenchmark(10)
 
 
 if __name__ == '__main__':
