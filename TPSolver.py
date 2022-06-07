@@ -60,12 +60,9 @@ class TPSolver:
     debug = flagTimeStatistics = flagPlot = False
     verbose = True
 
-    def __init__(self, license=True, GPUmode=False):
+    def __init__(self, license=True):
         if license:
             self.licenseDisclaimer()
-        if not GPUmode:
-            return
-        self.flagGPU = GPUmode
         
     def savePlots(self, mode):
         self.flag_saveplot = mode
@@ -1185,7 +1182,7 @@ def main():
     test.plotEveryNTimeSteps(10)
     test.savePlots(True)
 
-    # test.solve()
+    test.solve()
     # test.debugGPUmode()
     test.runBenchmark(10)
     
