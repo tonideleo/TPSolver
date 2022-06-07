@@ -34,7 +34,7 @@ class TPSolver:
     imin = imax = jmin = jmax = 0
 
     # Miscellaneous
-    __type = np.float32
+    __type = np.float64
     flagGPU = False
     flagSparseL = True
     linelenght = 70
@@ -959,7 +959,13 @@ class TPSolver:
         # Reset Values
         self.createComputationalMesh()
         self.setBoundaryConditions('corrected')
-
+        if self.flagSparseL:
+            self.createLaplacianSparse()
+        else:
+            self.createLaplacian()
+        self.t = 0
+        self.debug = True
+        
         # Run GPU
         gridDims = [(self.imax+2+self.TPBX-1)//self.TPBX, (self.jmax+2+self.TPBY-1)//self.TPBY]
         blockDims = [self.TPBX, self.TPBY]
@@ -1060,7 +1066,7 @@ def main():
     test = TPSolver(False)
     test.enableGPU(True)
     test.enableSparseL(False)
-    test.setTPBX(8)
+    test.setTPBX(4)
     test.setTPBY(4)
     test.setCFL(0.75)
     test.setVerbose(True)
@@ -1078,9 +1084,9 @@ def main():
     #test.setWallVelocity('left', -4)
     test.plotEveryNTimeSteps(100)
 
-    test.solve()
+    # test.solve()
     # test.debugGPUmode()
-    # test.runBenchmark(100)
+    test.runBenchmark(10)
 
 
 if __name__ == '__main__':
