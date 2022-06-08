@@ -1054,8 +1054,8 @@ class TPSolver:
                 str(round(cpu_time/gpu_time, self.sig_figs)) + 'x')
 
             self.printTextOnLine('Check Accuracy', '-')
-            print('Pressure Norm-L2 Value: ',
-                round(np.linalg.norm(p_cpu - p_gpu), self.sig_figs))
+            # print('Pressure Norm-L2 Value: ',
+            #     round(np.linalg.norm(p_cpu - p_gpu), self.sig_figs))
             print('u-vel Norm-L2 Value: ',
                 round(np.linalg.norm(u_cpu - u_gpu), self.sig_figs))
             print('v-vel Norm-L2 Value: ',
