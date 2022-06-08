@@ -1054,8 +1054,8 @@ class TPSolver:
                 str(round(cpu_time/gpu_time, self.sig_figs)) + 'x')
 
             self.printTextOnLine('Check Accuracy', '-')
-            print('Pressure Norm-L2 Value: ',
-                round(np.linalg.norm(p_cpu - p_gpu), self.sig_figs))
+            # print('Pressure Norm-L2 Value: ',
+            #     round(np.linalg.norm(p_cpu - p_gpu), self.sig_figs))
             print('u-vel Norm-L2 Value: ',
                 round(np.linalg.norm(u_cpu - u_gpu), self.sig_figs))
             print('v-vel Norm-L2 Value: ',
@@ -1116,8 +1116,8 @@ class TPSolver:
 def main():
     clearConsole()
     test = TPSolver(False)
-    test.enableGPU(False)
-    test.enableSparseL(True)
+    test.enableGPU(True)
+    test.enableSparseL(False)
     test.setFloatType(32)
     test.setTPBX(4)
     test.setTPBY(4)
@@ -1134,7 +1134,7 @@ def main():
     test.setWallVelocity('right', 4)
     test.setWallVelocity('bottom', -4)
     test.setWallVelocity('left', -4)
-    test.plotEveryNTimeSteps(10)
+    test.plotEveryNTimeSteps(50)
     test.savePlots(True)
 
     test.solve()
