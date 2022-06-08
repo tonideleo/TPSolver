@@ -470,7 +470,7 @@ class TPSolver:
     def initializeFigure(self, show = True):
 
         fig, (ax1, ax2) = plt.subplots(
-            1, 2, sharex=True, sharey=True, figsize=(16, 8))
+            1, 2, figsize=(16, 8))
         fig.suptitle('Results')
 
         XX, YY = np.meshgrid(
@@ -523,8 +523,12 @@ class TPSolver:
             axes[1].set_xlabel('X-Domain')
             axes[1].set_ylabel('Y-Domain')
             axes[1].set_title('Velocity Isolines and Contours')
-            plt.xlim([0, self.Lx - self.dx])
-            plt.ylim([0, self.Ly - self.dy])
+            axes[0].set_aspect('equal')
+            axes[1].set_aspect('equal')
+            axes[0].set_xlim([0, self.Lx - self.dx])
+            axes[0].set_ylim([0, self.Ly - self.dy])
+            axes[1].set_xlim([0, self.Lx - self.dx])
+            axes[1].set_ylim([0, self.Ly - self.dy])
             
             if show: 
                 figure.canvas.draw()
@@ -1112,8 +1116,8 @@ class TPSolver:
 def main():
     clearConsole()
     test = TPSolver(False)
-    test.enableGPU(True)
-    test.enableSparseL(False)
+    test.enableGPU(False)
+    test.enableSparseL(True)
     test.setFloatType(32)
     test.setTPBX(4)
     test.setTPBY(4)
@@ -1122,23 +1126,23 @@ def main():
     test.setDebug(False)
     test.setDensity(1.225)
     test.setKinematicViscosity(0.005)
-    test.setGridPoints(51,51)
-    test.setDomainSize(1, 1)
-    test.setSimulationTime(20)
+    test.setGridPoints(100,50)
+    test.setDomainSize(2, 1)
+    test.setSimulationTime(4)
     test.printTimeStatistics(True)
     test.setWallVelocity('top', 4)
-    #test.setWallVelocity('right', -4)
+    test.setWallVelocity('right', 4)
     test.setWallVelocity('bottom', -4)
-    #test.setWallVelocity('left', -4)
+    test.setWallVelocity('left', -4)
     test.plotEveryNTimeSteps(10)
     test.savePlots(True)
 
-    # test.solve()
+    test.solve()
     # test.debugGPUmode()
     # test.runBenchmark(10)
     
     # iter - min - max - steps
-    test.sweepGridDimensionsBenchmark(100,10,100,10)
+    # test.sweepGridDimensionsBenchmark(100,10,100,10)
 
 
 if __name__ == '__main__':
