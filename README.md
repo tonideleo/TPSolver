@@ -131,6 +131,6 @@ The only two options are 32 (for np.float32) or 64 (for np.float64).
 Half precision (np.float16) is not supported and long double (np.float128) is not implemented (as it is not supported on most GPUs).
 
 ## References
- - [M. Owkes. A guide to writing your first cfd solver. Montana, 2017.](https://www.montana.edu/mowkes/research/source-codes/GuideToCFD_2020_02_28_v2.pdf))
+ - [M. Owkes. A guide to writing your first cfd solver. Montana, 2017.](https://www.montana.edu/mowkes/research/source-codes/GuideToCFD_2020_02_28_v2.pdf)
  - [T. Huang and H.-C. Lim. Simulation of lid-driven cavity flow with internal circular obstacles. Applied Sciences, 10(13):4583, 2020.](https://www.mdpi.com/2076-3417/10/13/4583)
  - [P. Sikdar, S. M. Dash, and K. P. Sinhamahapatra. Lattice boltzmann simulations of a lid-driven cavity at different moving lengths of the top lid. In Fluid Mechanics and Fluid Power, pages 203–211. Springer, 2021.5](https://link.springer.com/chapter/10.1007/978-981-16-0698-4_22)
